@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .01
+EPSILON = .00001
 
 
 # Define the neural network model
@@ -94,7 +94,7 @@ def generate_training_points(method='uniform', num_points=10):
                                                                                    dtype=torch.float32)
 
 
-def train_PINN(x_train, weights):
+def train_PINN(x_train, weights,epsilon=EPSILON):
     # Training the PINN
     model = PINN()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -115,7 +115,7 @@ def train_PINN(x_train, weights):
     """
     # Continue training on the full dataset
     for epoch in range(4000):
-        loss = compute_loss(model, x_train, weights)
+        loss = compute_loss(model, x_train, weights,epsilon)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
