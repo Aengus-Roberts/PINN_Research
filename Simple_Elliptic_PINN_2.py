@@ -14,11 +14,11 @@ class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, 20),
+            nn.Linear(1, 100),
             nn.Tanh(),
-            nn.Linear(20, 20),
+            nn.Linear(100, 100),
             nn.Tanh(),
-            nn.Linear(20, 1)
+            nn.Linear(100, 1)
         )
 
     def forward(self, x):
@@ -157,6 +157,6 @@ if __name__ == "__main__":
     plt.xlabel('x')
     plt.ylabel('u(x)')
     plt.legend()
-    title = r"$-ε^2 u''(x) + u'(x) = 1$, ε = {:.5f}".format(EPSILON)
+    title = r"$-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
     plt.title(title)
     plt.show()
