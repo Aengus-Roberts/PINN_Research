@@ -24,7 +24,7 @@ class PINN(nn.Module):
 
 
 # Compute derivatives using PyTorch autograd
-def compute_loss(model, x, weights=None, epsilon=0.1):
+def compute_loss(model, x,loss_weight, weights=None, epsilon=0.1):
     x.requires_grad_(True)
     u = model(x)
     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
@@ -44,10 +44,10 @@ def compute_loss(model, x, weights=None, epsilon=0.1):
     u1_pred = model(torch.tensor([[1.0]]))
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
-    return physics_loss + bc_loss
+    return physics_loss + loss_weight*bc_loss
 
 
-def generate_training_points(num_points=10):
+def generate_training_points(num_points=1000):
     nodes, weights = roots_legendre(num_points)
     x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
     weights = weights * (1 / 2)
@@ -55,12 +55,12 @@ def generate_training_points(num_points=10):
                                                                                    dtype=torch.float32)
 
 
-def train_PINN(x_train, weights, epsilon):
+def train_PINN(x_train, weights, epsilon, loss_weight):
     # Training the PINN
     model = PINN()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     for epoch in range(4000):
-        loss = compute_loss(model, x_train, weights, epsilon)
+        loss = compute_loss(model, x_train,loss_weight, weights, epsilon)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -79,14 +79,13 @@ def get_assymetry(model, x_test):
     return (np.mean((forwards - backwards) ** 2)) ** 0.5
 
 
-def get_bifurcation(epsilon_array, num_points, x_test):
-    points, weights = generate_training_points(num_points)
+def get_bifurcation(epsilon_array, loss_weight, x_test):
+    points, weights = generate_training_points()
     assymetry_array = np.zeros_like(epsilon_array)
     for i, epsilon in ndenumerate(epsilon_array):
         print("Epsilon: ", epsilon)
-        model = train_PINN(points, weights, epsilon)
+        model = train_PINN(points, weights, epsilon, loss_weight)
         assymetry_array[i] = get_assymetry(model, x_test)
-
     return assymetry_array
 
 
@@ -105,16 +104,16 @@ if __name__ == "__main__":
     epsilon_array = np.array(epsilon_list)
 
     #varying over number of training points
-    num_train_points = [5,10,50,100,500,1000]
-    colours = ['r','b','g','c','m','k']
-    for i,n in enumerate (num_train_points):
-        assymetry_array = get_bifurcation(epsilon_array, n, x_test)
-        plt.plot(epsilon_array,assymetry_array,color=colours[i],label=f"$n={n}$")
+    loss_weighting = [10,1,0.5,0.1,0.05,0.01]
+    colours = ['r','b','g','c','k','m']
+    for i,loss_weight in enumerate (loss_weighting):
+        assymetry_array = get_bifurcation(epsilon_array, loss_weight, x_test)
+        plt.plot(epsilon_array,assymetry_array,color=colours[i],label=f"$loss weight={loss_weight}$")
 
     plt.legend()
     plt.xscale('log')
     plt.xlabel("Epsilon")
     plt.ylabel("Assymetry")
-    plt.title("'Bifurcation curve per number of points'")
+    plt.title("'Bifurcation' curve per learning rate")
     plt.show()
 

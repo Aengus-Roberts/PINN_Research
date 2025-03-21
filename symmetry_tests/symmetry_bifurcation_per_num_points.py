@@ -47,7 +47,7 @@ def compute_loss(model, x, weights=None, epsilon=0.1):
     return physics_loss + bc_loss
 
 
-def generate_training_points(num_points=1000):
+def generate_training_points(num_points=10):
     nodes, weights = roots_legendre(num_points)
     x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
     weights = weights * (1 / 2)
@@ -55,10 +55,10 @@ def generate_training_points(num_points=1000):
                                                                                    dtype=torch.float32)
 
 
-def train_PINN(x_train, weights, epsilon, lr=0.01):
+def train_PINN(x_train, weights, epsilon):
     # Training the PINN
     model = PINN()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
     for epoch in range(4000):
         loss = compute_loss(model, x_train, weights, epsilon)
         optimizer.zero_grad()
@@ -79,14 +79,14 @@ def get_assymetry(model, x_test):
     return (np.mean((forwards - backwards) ** 2)) ** 0.5
 
 
-def get_bifurcation(epsilon_array, lr, x_test):
-    points, weights = generate_training_points()
+def get_bifurcation(epsilon_array, num_points, x_test):
+    points, weights = generate_training_points(num_points)
     assymetry_array = np.zeros_like(epsilon_array)
     for i, epsilon in ndenumerate(epsilon_array):
         print("Epsilon: ", epsilon)
-        temp_assymetry = np.zeros(5)
+        temp_assymetry = np.zeros(3)
         for j in range(len(temp_assymetry)):
-            model = train_PINN(points, weights, epsilon, lr)
+            model = train_PINN(points, weights, epsilon)
             temp_assymetry[j] = get_assymetry(model, x_test)
         assymetry_array[i] = np.mean(temp_assymetry)
 
@@ -108,16 +108,16 @@ if __name__ == "__main__":
     epsilon_array = np.array(epsilon_list)
 
     #varying over number of training points
-    lr_list = [0.1,0.05,0.01,0.005,0.001]
-    colours = ['r','b','g','c','k']
-    for i,lr in enumerate (lr_list):
-        assymetry_array = get_bifurcation(epsilon_array, lr, x_test)
-        plt.plot(epsilon_array,assymetry_array,color=colours[i],label=f"$lr={lr}$")
+    num_train_points = [10,100,1000,10000,100000,1000000]
+    colours = ['r','b','g','c','m','k']
+    for i,n in enumerate (num_train_points):
+        assymetry_array = get_bifurcation(epsilon_array, n, x_test)
+        plt.plot(epsilon_array,assymetry_array,color=colours[i],label=f"$n={n}$")
 
     plt.legend()
     plt.xscale('log')
     plt.xlabel("Epsilon")
     plt.ylabel("Assymetry")
-    plt.title("'Bifurcation' curve per learning rate")
+    plt.title("'Bifurcation curve per number of points'")
     plt.show()
 
