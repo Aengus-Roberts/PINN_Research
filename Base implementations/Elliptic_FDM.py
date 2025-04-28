@@ -1,16 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-EPSILON = 0.00001
-N = 51
+EPSILON = 0.001
 
-D = np.ndarray(shape=(N+1,N+1), dtype=np.float64)
 
-powers = [i for i in range(-3,3)]
+powers = [i for i in range(-3,0)]
+print(powers)
 tens_list = [10**i for i in powers]
-h_list = [EPSILON * ten for ten in tens_list]
+print(tens_list)
+#h_list = [EPSILON * ten for ten in tens_list]
+#print(h_list)
 
-for k,h in enumerate(h_list):
+for k,h in enumerate(tens_list):
+    print(k, h)
+    N = int(np.floor(1/h))
+    print(N)
+    D = np.ndarray(shape=(N + 1, N + 1), dtype=np.float64)
     f = np.ones(shape=N+1, dtype=np.float64)
     f *= h**2
     f[0] = 0
@@ -37,7 +42,7 @@ for k,h in enumerate(h_list):
     x = np.linspace(0,1,N+1)
 
     #plotting soln
-    plt.plot(x,u, label=r'$h = ε\times10^{}$'.format(powers[k]))
-plt.title('FDM: -εu" + u = 1, u(0)=u(1)=0, ε = {}'.format(EPSILON))
+    plt.plot(x,u, label=r'$h = {}$'.format(h))
+plt.title('FDM: -ε^2u" + u = 1, u(0)=u(1)=0, ε = {}'.format(EPSILON))
 plt.legend()
 plt.show()
