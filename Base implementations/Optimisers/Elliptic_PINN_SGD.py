@@ -3,14 +3,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
-from numpy.ma.extras import ndenumerate
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
+EPSILON = .01
 
 
-EPSILON = 1e-3
-
+# Defined PINN via PyTorch Structure, 2 Hidden Layers
 class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
@@ -25,6 +24,8 @@ class PINN(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+
+# Compute derivatives using PyTorch autograd
 def compute_loss(model, x, weights=None, EPSILON=EPSILON):
     x.requires_grad_(True)
     u = model(x)
@@ -47,22 +48,6 @@ def compute_loss(model, x, weights=None, EPSILON=EPSILON):
 
     return physics_loss + 10*bc_loss
 
-def train_PINN(x_train, weights,epsilon=EPSILON):
-    # Training the PINN
-    model = PINN()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-
-    # Continue training on the full dataset
-    for epoch in range(4000):
-        loss = compute_loss(model, x_train, weights,epsilon)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        if epoch % 500 == 0:
-            print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
-
-    return model
 
 def gauss_lobatto_nodes_weights(n):
     # Compute the Gauss-Lobatto nodes and weights on the interval [-1,1] for n nodes.
@@ -89,6 +74,8 @@ def gauss_lobatto_nodes_weights(n):
 
     return x, w
 
+
+# Generate training points using different quadrature methods
 def generate_training_points(method='uniform', num_points=10):
     if method == 'uniform':
         x_train = np.linspace(0, 1, num_points)
@@ -120,64 +107,60 @@ def generate_training_points(method='uniform', num_points=10):
     #np.random.shuffle(x_train)
     return torch.tensor(x_train.reshape(-1, 1), dtype=torch.float32), torch.tensor(weights.reshape(-1, 1),
                                                                                    dtype=torch.float32)
+def train_PINN(x_train, weights,epsilon=EPSILON):
+    # Training the PINN
+    model = PINN()
+    #optimiser = optim.Adam(model.parameters(), lr=0.01)
+    optimiser = optim.ASGD(model.parameters(), lr=0.01)
 
-num_points = 50
-num_test_points = 10000
-x_test = torch.linspace(0, 1, num_test_points).reshape(-1, 1)
+    # Continue training on the full dataset
+    for epoch in range(4000):
+        loss = compute_loss(model, x_train, weights,epsilon)
+        optimiser.zero_grad()
+        loss.backward()
+        optimiser.step()
 
-def get_assymetry(model):
-    forwards = model(x_test).detach().numpy()
-    backwards = forwards[::-1]
+        if epoch % 500 == 0:
+            print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
 
-    # calculating l2 norm of difference between forward and backward pass of function
-    return (np.mean((forwards - backwards) ** 2)) ** 0.5
+    return model
+
+# Plot the results
+def create_results(quadrature, weights, color='red', label=''):
+    model = train_PINN(quadrature, weights)
+    y_pred = model(x_test).detach().numpy()
+    plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
 
 
-if __name__ == '__main__':
-    # Getting Collocation and Weights
-    uniform, uniform_weights = generate_training_points(num_points=num_points)
-    gauss_100, gauss_100_weights = generate_training_points(method='gauss_legendre', num_points=num_points)
-    gauss_101, gauss_101_weights = generate_training_points(method='gauss_legendre', num_points=101)
-    #lobatto_100, lobatto_100_weights = generate_training_points(method='gauss_lobatto', num_points=num_points)
-    #lobatto_101, lobatto_101_weights = generate_training_points(method='gauss_lobatto', num_points=101)
 
-    one_to_ten = [i for i in range(1, 10)]
-    ten_to_one = one_to_ten[::-1]
+if __name__ == "__main__":
+    # Plotting True Result
+    x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
+    u2 = lambda x: 1 - np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON))
+    y_true = np.array([u2(x) for x in x_test])
+    plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
-    epsilon_list = []
+    # Getting Collocation Points and weights
+    uniform, uniform_weights = generate_training_points(num_points=50)
+    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre',num_points=50)
+    #gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
+    #lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
+    #lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
+    #thirds,thirds_weights = generate_training_points(method='thirds', num_points=30)
+    #outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
 
-    for j in range(1, 4):
-        for i in ten_to_one:
-            epsilon_list.append(i * (10 ** -j))
+    # Plotting Quadratures
+    create_results(uniform, uniform_weights, 'red', 'PINN: Uniform (50 points)')
+    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss (50 points)')
+    #create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
+    #create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
+    #create_results(outside, outside_weights, 'black', 'PINN: Outside')
+    #create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
+    #create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
 
-    epsilon_array = np.array(epsilon_list)
-    uniform_assymetry_array = np.zeros_like(epsilon_array)
-    gauss_100_assymetry_array = np.zeros_like(epsilon_array)
-    # gauss_101_assymetry_array = np.zeros_like(epsilon_array)
-    #lobatto_100_assymetry_array = np.zeros_like(epsilon_array)
-    # lobatto_101_assymetry_array = np.zeros_like(epsilon_array)
-
-    for i, epsilon in ndenumerate(epsilon_array):
-        print("Epsilon: ", epsilon)
-        # training on uniform collocation
-        print("Uniform")
-        model = train_PINN(uniform, uniform_weights,epsilon)
-        uniform_assymetry_array[i] = get_assymetry(model)
-        # training on gauss collocation (100 points)
-        print("Gauss")
-        model = train_PINN(gauss_100, gauss_100_weights,epsilon)
-        gauss_100_assymetry_array[i] = get_assymetry(model)
-        # training on lobatto collocation (100 points)
-        #print("Lobatto")
-        #model = train_PINN(lobatto_100, lobatto_100_weights,epsilon)
-        #lobatto_100_assymetry_array[i] = get_assymetry(model)
-
-    plt.scatter(epsilon_array, uniform_assymetry_array, color='red', label='Uniform')
-    plt.scatter(epsilon_array, gauss_100_assymetry_array, color='blue', label='Gauss')
-    #plt.scatter(epsilon_array, lobatto_100_assymetry_array, color='green', label='Lobatto')
-    plt.xscale('log')
+    plt.xlabel('x')
+    plt.ylabel('u(x)')
     plt.legend()
-    plt.title(r'Measure of asymmetry in PINN solution $u_\theta$ as a function of $\varepsilon$')
-    plt.xlabel(r'$\varepsilon$')
-    plt.ylabel(r"$||u_\theta(x) - u_\theta(1-x)||_{L^2}$")
+    title = r"$-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
+    plt.title(title)
     plt.show()

@@ -9,7 +9,7 @@ from numpy.polynomial.legendre import Legendre
 EPSILON = .01
 
 
-# Define the neural network model
+# Defined PINN via PyTorch Structure, 2 Hidden Layers
 class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
@@ -18,7 +18,15 @@ class PINN(nn.Module):
             nn.Tanh(),
             nn.Linear(20, 20),
             nn.Tanh(),
-            nn.Linear(20, 1)
+            nn.Linear(20, 20),
+            nn.Tanh(),
+            nn.Linear(20, 20),
+            nn.Tanh(),
+            nn.Linear(20, 20),
+            nn.Tanh(),
+            nn.Linear(20, 20),
+            nn.Tanh(),
+            nn.Linear(20, 1),
         )
 
     def forward(self, x):
@@ -41,12 +49,12 @@ def compute_loss(model, x, weights=None, EPSILON=EPSILON):
     else:
         physics_loss = torch.mean(residual ** 2)  # Uniform weight (default)
 
-    # Boundary condition loss: u(0) = u(1) = 0
-    u0_pred = model(torch.tensor([[0.0]]))
-    u1_pred = model(torch.tensor([[1.0]]))
+    # Boundary condition loss: u(-1) = u(1) = 0
+    u0_pred = model(torch.tensor([[-1.0]], device=x.device))
+    u1_pred = model(torch.tensor([[1.0]], device=x.device))
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
-    return physics_loss + 10*bc_loss
+    return physics_loss + 10 * bc_loss
 
 
 def gauss_lobatto_nodes_weights(n):
@@ -78,53 +86,54 @@ def gauss_lobatto_nodes_weights(n):
 # Generate training points using different quadrature methods
 def generate_training_points(method='uniform', num_points=10):
     if method == 'uniform':
-        x_train = np.linspace(0, 1, num_points)
+        x_train = np.linspace(-1, 1, num_points)
         weights = np.ones_like(x_train) / num_points  # Equal weights
     elif method == 'gauss_legendre':
         nodes, weights = roots_legendre(num_points)
-        x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
-        weights = weights * (1 / 2)
+        x_train = nodes
+        weights = weights
     elif method == 'gauss_lobatto':
         nodes, weights = gauss_lobatto_nodes_weights(num_points)
         x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
         weights = weights * (1 / 2)
     elif method == 'thirds':
         third_N = int(np.ceil(num_points / 3))
-        first_x_train = np.linspace(0, 2*EPSILON, third_N)
-        third_x_train = np.linspace(1-(2*EPSILON), 1, third_N)
-        middle_x_train = np.linspace(2*EPSILON,1-(2*EPSILON),num_points-(2*third_N))
+        first_x_train = np.linspace(0, 2 * EPSILON, third_N)
+        third_x_train = np.linspace(1 - (2 * EPSILON), 1, third_N)
+        middle_x_train = np.linspace(2 * EPSILON, 1 - (2 * EPSILON), num_points - (2 * third_N))
         x_train = np.concatenate((first_x_train, middle_x_train, third_x_train))
         weights = np.ones_like(x_train) / num_points  # Equal weights
     elif method == 'outside_thirds':
         third_N = int(np.ceil(num_points / 3))
-        first_x_train = np.linspace(-EPSILON, 2*EPSILON, third_N)
-        third_x_train = np.linspace(1-(2*EPSILON), 1 + EPSILON, third_N)
-        middle_x_train = np.linspace(2*EPSILON,1-(2*EPSILON),num_points-(2*third_N))
+        first_x_train = np.linspace(-EPSILON, 2 * EPSILON, third_N)
+        third_x_train = np.linspace(1 - (2 * EPSILON), 1 + EPSILON, third_N)
+        middle_x_train = np.linspace(2 * EPSILON, 1 - (2 * EPSILON), num_points - (2 * third_N))
         x_train = np.concatenate((first_x_train, middle_x_train, third_x_train))
         weights = np.ones_like(x_train) / num_points  # Equal weights
     else:
         raise ValueError("Unsupported quadrature method")
-    np.random.shuffle(x_train)
+    # np.random.shuffle(x_train)
     return torch.tensor(x_train.reshape(-1, 1), dtype=torch.float32), torch.tensor(weights.reshape(-1, 1),
                                                                                    dtype=torch.float32)
 
 
-def train_PINN(x_train, weights,epsilon=EPSILON):
+def train_PINN(x_train, weights, epsilon=EPSILON):
     # Training the PINN
     model = PINN()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimiser = optim.Adam(model.parameters(), lr=0.01)
 
     # Continue training on the full dataset
     for epoch in range(4000):
-        loss = compute_loss(model, x_train, weights,epsilon)
-        optimizer.zero_grad()
+        loss = compute_loss(model, x_train, weights, epsilon)
+        optimiser.zero_grad()
         loss.backward()
-        optimizer.step()
+        optimiser.step()
 
         if epoch % 500 == 0:
             print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
 
     return model
+
 
 # Plot the results
 def create_results(quadrature, weights, color='red', label=''):
@@ -133,31 +142,30 @@ def create_results(quadrature, weights, color='red', label=''):
     plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
 
 
-
 if __name__ == "__main__":
     # Plotting True Result
-    x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
-    u2 = lambda x: 1 - np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON))
-    y_true = np.array([u2(x) for x in x_test])
-    plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
+    x_test = torch.linspace(-1, 1, 100).reshape(-1, 1)
+    # u2 = lambda x: 1 - np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON))
+    # y_true = np.array([u2(x) for x in x_test])
+    # plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
     # Getting Collocation Points and weights
-    uniform, uniform_weights = generate_training_points()
-    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre')
-    #gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
-    #lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
-    #lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
-    thirds,thirds_weights = generate_training_points(method='thirds', num_points=30)
-    outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
+    uniform, uniform_weights = generate_training_points(num_points=100)
+    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=100)
+    # gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
+    # lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
+    # lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
+    # thirds,thirds_weights = generate_training_points(method='thirds', num_points=30)
+    # outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
 
     # Plotting Quadratures
-    create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
-    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss_10')
-    #create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
-    create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
-    create_results(outside, outside_weights, 'black', 'PINN: Outside')
-    #create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
-    #create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
+    create_results(uniform, uniform_weights, 'red', 'PINN: Uniform (50 points)')
+    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss (50 points)')
+    # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
+    # create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
+    # create_results(outside, outside_weights, 'black', 'PINN: Outside')
+    # create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
+    # create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-EPSILON = 0.001
+EPSILON = 0.01
 
 
 powers = [i for i in range(-3,0)]
