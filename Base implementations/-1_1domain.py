@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .01
+EPSILON = .025
 
 
 # Defined PINN via PyTorch Structure, 2 Hidden Layers
@@ -42,7 +42,7 @@ def compute_loss(model, x, weights=None, EPSILON=EPSILON):
         physics_loss = torch.mean(residual ** 2)  # Uniform weight (default)
 
     # Boundary condition loss: u(0) = u(1) = 0
-    u0_pred = model(torch.tensor([[0.0]], device=x.device))
+    u0_pred = model(torch.tensor([[-1.0]], device=x.device))
     u1_pred = model(torch.tensor([[1.0]], device=x.device))
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
@@ -78,12 +78,12 @@ def gauss_lobatto_nodes_weights(n):
 # Generate training points using different quadrature methods
 def generate_training_points(method='uniform', num_points=10):
     if method == 'uniform':
-        x_train = np.linspace(0, 1, num_points)
+        x_train = np.linspace(-1, 1, num_points)
         weights = np.ones_like(x_train) / num_points  # Equal weights
     elif method == 'gauss_legendre':
         nodes, weights = roots_legendre(num_points)
-        x_train = (nodes + 1)/2
-        weights = weights/2
+        x_train = nodes
+        weights = weights
     elif method == 'gauss_lobatto':
         nodes, weights = gauss_lobatto_nodes_weights(num_points)
         x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
@@ -136,8 +136,8 @@ def create_results(quadrature, weights, color='red', label=''):
 
 if __name__ == "__main__":
     # Plotting True Result
-    x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
-    u2 = lambda x: 1 - np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON))
+    x_test = torch.linspace(-1, 1, 100).reshape(-1, 1)
+    u2 = lambda x: 1 - 2*(np.sinh(1/EPSILON) * np.cosh(x/EPSILON))/np.sinh(2/EPSILON)
     y_true = np.array([u2(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
