@@ -18,7 +18,7 @@ def bc(ya, yb):
     return np.array([ya[0], yb[0]])
 
 # Initial guess (zero function)
-x = np.linspace(0, 1, 50)
+x = np.linspace(0, 1, 20)
 y_guess = np.zeros((2, x.size))  # [u, u']
 
 # Solve the BVP

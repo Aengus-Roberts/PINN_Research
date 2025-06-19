@@ -1,83 +1,78 @@
 import jax
 import jax.numpy as jnp
+from jax import grad, vmap
 import optax
 import matplotlib.pyplot as plt
-from jax import grad, vmap, jit
 
-EPSILON = .01
-
-# Initialize a simple 2-hidden-layer neural network
-def init_params(key, layers=[1, 20, 1]):
+# Define MLP model
+def init_mlp(sizes, key):
     params = []
-    keys = jax.random.split(key, len(layers))
-    for m, n, k in zip(layers[:-1], layers[1:], keys):
-        W = jax.random.normal(k, (m, n)) * jnp.sqrt(2.0 / m)
-        b = jnp.zeros((n,))
+    for in_dim, out_dim in zip(sizes[:-1], sizes[1:]):
+        key, subkey = jax.random.split(key)
+        W = jax.random.normal(subkey, (in_dim, out_dim)) * jnp.sqrt(2 / in_dim)
+        b = jnp.zeros(out_dim)
         params.append((W, b))
     return params
 
-# Forward pass through the network
-def forward(params, x):
+def mlp(params, x):
     for W, b in params[:-1]:
         x = jnp.tanh(jnp.dot(x, W) + b)
     W, b = params[-1]
     return jnp.dot(x, W) + b
 
-# Compute the PINN loss: PDE residual + boundary loss
-def loss_fn(params, x):
-    def u(x):
-        return forward(params, x.reshape(1, -1))[0, 0]
+# Define residual of the PDE: -epsilon^2 u'' + u = 1
+def residual(params, x, epsilon):
+    u = lambda x_: mlp(params, x_)
+    du = grad(u)
+    d2u = grad(du)
+    return -epsilon**2 * d2u(x) + u(x) - 1.0
 
-    dudx = grad(u)
-    d2udx2 = grad(dudx)
-    u_xx = vmap(d2udx2)(x)
-    u_pred = vmap(u)(x)
+# Full loss including residual and boundary conditions
+def loss_fn(params, x_colloc, epsilon):
+    res = vmap(lambda x: residual(params, x, epsilon))(x_colloc)
+    loss_r = jnp.mean(res**2)
 
-    residual = -(EPSILON ** 2) * u_xx + u_pred - 1
-    residual_loss = jnp.mean(residual ** 2)
+    u = lambda x: mlp(params, x)
+    bc1 = u(jnp.array([[-1.0]]))
+    bc2 = u(jnp.array([[1.0]]))
+    loss_bc = bc1**2 + bc2**2
 
-    # Boundary loss
-    bc_loss = u(jnp.array([0.0]))**2 + u(jnp.array([1.0]))**2
+    return loss_r + loss_bc
 
-    return residual_loss + bc_loss
+def train(params, x_colloc, epsilon, steps=5000, lr=1e-3):
+    opt = optax.adam(lr)
+    opt_state = opt.init(params)
 
-# Training loop
-def train():
-    key = jax.random.PRNGKey(0)
-    params = init_params(key)
-
-    x_train = jnp.linspace(0, 1, 100).reshape(-1, 1)
-    optimizer = optax.adam(1e-3)
-    opt_state = optimizer.init(params)
-
-    @jit
+    @jax.jit
     def step(params, opt_state):
-        loss, grads = jax.value_and_grad(loss_fn)(params, x_train)
-        updates, opt_state = optimizer.update(grads, opt_state)
+        loss, grads = jax.value_and_grad(loss_fn)(params, x_colloc, epsilon)
+        updates, opt_state = opt.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    for epoch in range(5000):
+    for i in range(steps):
         params, opt_state, loss = step(params, opt_state)
-        if epoch % 500 == 0:
-            print(f"Epoch {epoch}, Loss: {loss:.6e}")
-
+        if i % 500 == 0:
+            print(f"Step {i}: Loss = {loss:.5e}")
     return params
 
-# Plot the result
-def plot_solution(params):
-    x_test = jnp.linspace(0, 1, 200).reshape(-1, 1)
-    u_pred = vmap(lambda x: forward(params, x.reshape(1, -1))[0, 0])(x_test)
-    #u_true = jnp.sin(jnp.pi * x_test).flatten()
+if __name__ == "__main__":
+    key = jax.random.PRNGKey(0)
+    net_sizes = [1, 64, 64, 1]
+    params = init_mlp(net_sizes, key)
 
-    plt.plot(x_test, u_pred, label="PINN", linestyle='--')
-    #plt.plot(x_test, u_true, label="Exact", linestyle='-')
+    x_colloc = jnp.linspace(-1, 1, 100).reshape(-1, 1)
+    epsilon = 0.01
+
+    params = train(params, x_colloc, epsilon)
+
+    x_test = jnp.linspace(-1, 1, 200).reshape(-1, 1)
+    y_pred = vmap(lambda x: mlp(params, x))(x_test)
+
+    plt.plot(x_test, y_pred, label="PINN Prediction")
     plt.xlabel("x")
     plt.ylabel("u(x)")
+    plt.grid(True)
     plt.legend()
-    #plt.title("PINN solution of -u''(x) = π² sin(πx)")
+    plt.title("PINN Solution to -eps^2 u'' + u = 1")
     plt.show()
-
-if __name__ == "__main__":
-    trained_params = train()
-    plot_solution(trained_params)
