@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .01
+EPSILON = .001
 B = 1 / (1 - np.exp(-1 / EPSILON))
 
 
@@ -114,7 +114,7 @@ def train_PINN(x_train, weights):
             print(f"Initial Training Epoch {epoch}, Loss: {loss.item():.6f}")
 
     # Continue training on the full dataset
-    for epoch in range(2000):
+    for epoch in range(20000):
         loss = compute_loss(model, x_train, weights)
         optimizer.zero_grad()
         loss.backward()

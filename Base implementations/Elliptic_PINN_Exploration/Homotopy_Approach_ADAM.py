@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .01
+EPSILON = .001
 
 
 # Defined PINN via PyTorch Structure, 2 Hidden Layers
@@ -14,11 +14,11 @@ class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, 20),
+            nn.Linear(1, 100),
             nn.Tanh(),
-            nn.Linear(20, 20),
+            nn.Linear(100, 100),
             nn.Tanh(),
-            nn.Linear(20, 1)
+            nn.Linear(100, 1),
         )
 
     def forward(self, x):
@@ -46,7 +46,7 @@ def compute_loss(model, x, weights=None, EPSILON=EPSILON):
     u1_pred = model(torch.tensor([[1.0]], device=x.device))
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
-    return physics_loss + 10*bc_loss
+    return physics_loss + bc_loss
 
 
 def gauss_lobatto_nodes_weights(n):
@@ -82,84 +82,99 @@ def generate_training_points(method='uniform', num_points=10):
         weights = np.ones_like(x_train) / num_points  # Equal weights
     elif method == 'gauss_legendre':
         nodes, weights = roots_legendre(num_points)
-        x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
-        weights = weights * (1 / 2)
+        x_train = (nodes + 1)/2
+        weights = weights/2
     elif method == 'gauss_lobatto':
         nodes, weights = gauss_lobatto_nodes_weights(num_points)
         x_train = (nodes + 1) * (1 / 2)  # Scale to [0,1]
         weights = weights * (1 / 2)
     elif method == 'thirds':
         third_N = int(np.ceil(num_points / 3))
-        first_x_train = np.linspace(0, 2*EPSILON, third_N)
-        third_x_train = np.linspace(1-(2*EPSILON), 1, third_N)
-        middle_x_train = np.linspace(2*EPSILON,1-(2*EPSILON),num_points-(2*third_N))
+        first_x_train = np.linspace(0, 2 * EPSILON, third_N)
+        third_x_train = np.linspace(1 - (2 * EPSILON), 1, third_N)
+        middle_x_train = np.linspace(2 * EPSILON, 1 - (2 * EPSILON), num_points - (2 * third_N))
         x_train = np.concatenate((first_x_train, middle_x_train, third_x_train))
         weights = np.ones_like(x_train) / num_points  # Equal weights
     elif method == 'outside_thirds':
         third_N = int(np.ceil(num_points / 3))
-        first_x_train = np.linspace(-EPSILON, 2*EPSILON, third_N)
-        third_x_train = np.linspace(1-(2*EPSILON), 1 + EPSILON, third_N)
-        middle_x_train = np.linspace(2*EPSILON,1-(2*EPSILON),num_points-(2*third_N))
+        first_x_train = np.linspace(-EPSILON, 2 * EPSILON, third_N)
+        third_x_train = np.linspace(1 - (2 * EPSILON), 1 + EPSILON, third_N)
+        middle_x_train = np.linspace(2 * EPSILON, 1 - (2 * EPSILON), num_points - (2 * third_N))
         x_train = np.concatenate((first_x_train, middle_x_train, third_x_train))
         weights = np.ones_like(x_train) / num_points  # Equal weights
     else:
         raise ValueError("Unsupported quadrature method")
-    #np.random.shuffle(x_train)
+    # np.random.shuffle(x_train)
     return torch.tensor(x_train.reshape(-1, 1), dtype=torch.float32), torch.tensor(weights.reshape(-1, 1),
                                                                                    dtype=torch.float32)
-def train_PINN(x_train, weights,epsilon=EPSILON):
-    # Training the PINN
-    model = PINN()
-    optimiser = optim.LBFGS(model.parameters(), lr=0.01)
 
-    def closure():
-        optimiser.zero_grad()
-        loss = compute_loss(model, x_train, weights, epsilon)  # Correct call
-        loss.backward()
-        return loss
+
+def train_PINN(x_train, weights, model = 0, epsilon=EPSILON, homotopy_method = True):
+    # Training the PINN
+    if epsilon == 100 or homotopy_method == False:
+        model = PINN()
+    optimiser = optim.Adam(model.parameters(), lr=0.01)
+    EPOCHS = 5000
 
     # Continue training on the full dataset
-    for epoch in range(4000):
-        optimiser.step(closure)
+    for epoch in range(EPOCHS):
+        loss = compute_loss(model, x_train, weights, epsilon)
+        optimiser.zero_grad()
+        loss.backward()
+        optimiser.step()
 
         if epoch % 500 == 0:
-            print(f"Full Training Epoch {epoch}")
+            print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
 
     return model
 
+
 # Plot the results
-def create_results(quadrature, weights, color='red', label=''):
-    model = train_PINN(quadrature, weights)
-    y_pred = model(x_test).detach().numpy()
-    plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
+def create_results(x_test,quadrature, weights, color='red', label=''):
+    epsilon_list = [100,80,60,40,20,10,8,6,4,2,1,0.8,0.6,0.4,0.2,0.1,0.08,0.06,0.02,0.01,0.008,0.006,0.002,0.001]
+    for epsilon in epsilon_list:
+        print(f"Epsilon: {epsilon}")
+        if epsilon == 100:
+            model = train_PINN(quadrature, weights, epsilon=epsilon)
+        else:
+            non_homotopy_model = train_PINN(quadrature, weights, epsilon=epsilon, homotopy_method=False)
+            model = train_PINN(quadrature, weights,model = model, epsilon=epsilon)
+            plt.plot(x_test.numpy(), model(x_test).detach().numpy(), label='homotopy method')
+            plt.plot(x_test.numpy(), non_homotopy_model(x_test).detach().numpy(), label='regular method')
+            plotTrue(x_test,epsilon)
+            plt.xlabel('x')
+            plt.ylabel('u(x)')
+            plt.legend()
+            title = r"$-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(epsilon)
+            plt.title(title)
+            plt.show()
+    return model(x_test).detach().numpy()
 
 
+def plotTrue(x_test, epsilon=EPSILON):
+
+    u2 = lambda x: 1 - np.cosh((x - 0.5) / epsilon) / np.cosh(1 / (2 * epsilon))
+    y_true = np.array([u2(x) for x in x_test])
+    plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
+    return x_test
 
 if __name__ == "__main__":
     # Plotting True Result
-    x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
-    u2 = lambda x: 1 - np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON))
-    y_true = np.array([u2(x) for x in x_test])
-    plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
+    x_test = torch.linspace(0, 1, 1000).reshape(-1, 1)
 
     # Getting Collocation Points and weights
-    uniform, uniform_weights = generate_training_points(num_points=50)
-    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre',num_points=100)
-    #gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
-    #lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
-    #lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
-    thirds,thirds_weights = generate_training_points(method='thirds', num_points=50)
-    #outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
+    uniform, uniform_weights = generate_training_points(num_points=100)
+    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=100)
+    thirds, thirds_weights = generate_training_points(method='thirds', num_points=100)
 
     # Plotting Quadratures
-    create_results(uniform, uniform_weights, 'red', 'PINN: Uniform (50 points)')
-    #create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss (50 points)')
-    #create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
-    create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
-    #create_results(outside, outside_weights, 'black', 'PINN: Outside')
-    #create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
-    #create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
+    uniform_result = create_results(x_test,uniform, uniform_weights, 'red', 'PINN: Uniform')
+    gauss_result = create_results(x_test,gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
+    thirds_result = create_results(x_test,thirds, thirds_weights, 'green', 'PINN: Thirds')
 
+    plotTrue(x_test)
+    plt.plot(x_test, uniform_result, label='Uniform Solution', color='red')
+    plt.plot(x_test, gauss_result, label='Gauss Solution', color='blue')
     plt.xlabel('x')
     plt.ylabel('u(x)')
     plt.legend()

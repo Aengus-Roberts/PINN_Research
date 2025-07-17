@@ -60,7 +60,7 @@ def train_PINN(x_train, weights, epsilon):
     model = PINN()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     for epoch in range(4000):
-        loss = compute_loss(model, x_train, weights, epsilon)
+        loss = compute_loss(model, x_train[1:-1], weights[1:-1], epsilon)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
