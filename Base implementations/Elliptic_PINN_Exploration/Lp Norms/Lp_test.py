@@ -24,7 +24,7 @@ class PINN(nn.Module):
 
 
 # Compute derivatives using PyTorch autograd
-def compute_loss(model, x, weights=None, EPSILON=EPSILON):
+def compute_loss(model, x, weights=None, EPSILON=EPSILON, p=2):
     x.requires_grad_(True)
     u = model(x)
     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
@@ -35,14 +35,14 @@ def compute_loss(model, x, weights=None, EPSILON=EPSILON):
 
     # Compute weighted physics loss if weights are provided
     if weights is not None:
-        physics_loss = torch.sum(weights * torch.abs(residual))  # Weighted sum
+        physics_loss = torch.sum(weights * torch.abs(residual) ** p)  # Weighted sum
     else:
-        physics_loss = torch.mean(torch.abs(residual))  # Uniform weight (default)
+        physics_loss = torch.mean(torch.abs(residual) ** p)  # Uniform weight (default)
 
     # Boundary condition loss: u(0) = u(1) = 0
     u0_pred = model(torch.tensor([[0.0]], device=x.device))
     u1_pred = model(torch.tensor([[1.0]], device=x.device))
-    bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
+    bc_loss = torch.abs(u0_pred).pow(p) + torch.abs(u1_pred).pow(p)
 
     return physics_loss + bc_loss
 
@@ -117,7 +117,7 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
     optimiser = optim.Adam(model.parameters(), lr=0.01)
 
     # Continue training on the full dataset
-    for epoch in range(20000):
+    for epoch in range(10000):
         loss = compute_loss(model, x_train[1:-1], weights[1:-1], epsilon)
         optimiser.zero_grad()
         loss.backward()
@@ -143,25 +143,16 @@ if __name__ == "__main__":
     y_true = np.array([u2(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
-    # Getting Collocation Points and weights
-    uniform, uniform_weights = generate_training_points(num_points=1000)
-    #gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
-    sin, sin_weights = generate_training_points(method='sin', num_points=1000)
-    # gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
-    # lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
-    # lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
-    # thirds,thirds_weights = generate_training_points(method='thirds', num_points=30)
-    # outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
+    low_p_list = [1,2,3,4,5,6,7,8,9]
+    high_p_list = [10,20,30,40,50,60,70,80,90]
+    colors = ['tab:red', 'tab:blue', 'tab:orange', 'tab:purple', 'tab:pink', 'tab:brown','tab:gray','tab:olive','tab:cyan']
 
-    # Plotting Quadratures
-    create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
-    #create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
-    create_results(sin, sin_weights, 'black', 'PINN: Sin')
-    # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
-    # create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
-    # create_results(outside, outside_weights, 'black', 'PINN: Outside')
-    # create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
-    # create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
+    # Getting Collocation Points and weights
+    points, weights = generate_training_points(method='gauss_legendre', num_points=1000)
+
+    for i,p in enumerate(low_p_list):
+        create_results(points, weights, colors[i], 'PINN: p={}'.format(p))
+    plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')
@@ -169,3 +160,15 @@ if __name__ == "__main__":
     title = r"$-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
     plt.title(title)
     plt.show()
+
+    for i,p in enumerate(high_p_list):
+        create_results(points, weights, colors[i], 'PINN: p={}'.format(p))
+    plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
+
+    plt.xlabel('x')
+    plt.ylabel('u(x)')
+    plt.legend()
+    title = r"$-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
+    plt.title(title)
+    plt.show()
+

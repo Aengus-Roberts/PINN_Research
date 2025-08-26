@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .01
+EPSILON = .1
 
 
 # Defined PINN via PyTorch Structure, 2 Hidden Layers
@@ -14,9 +14,11 @@ class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, 100),
+            nn.Linear(1, 50),
             nn.Tanh(),
-            nn.Linear(100, 1),
+            nn.Linear(50, 50),
+            nn.Tanh(),
+            nn.Linear(50, 1),
         )
 
     def forward(self, x):
@@ -31,13 +33,14 @@ def compute_loss(model, x, weights=None, EPSILON=EPSILON):
     u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
     # ODE residual: -epsilon^2u"(x) + u(x) - 1
-    residual = -(EPSILON ** 2) * u_xx + u - 1
+    # Weak Formulation of ODE: epsilon^2 (u'(x))^2 / 2 + u^2(x)/2 - u(x)
+    residual = (EPSILON ** 2) * (u_x**2)/2 + (u**2)/2 - u
 
     # Compute weighted physics loss if weights are provided
     if weights is not None:
-        physics_loss = torch.sum(weights * torch.abs(residual))  # Weighted sum
+        physics_loss = torch.sum(weights * residual ** 2)  # Weighted sum
     else:
-        physics_loss = torch.mean(torch.abs(residual))  # Uniform weight (default)
+        physics_loss = torch.mean(residual ** 2)  # Uniform weight (default)
 
     # Boundary condition loss: u(0) = u(1) = 0
     u0_pred = model(torch.tensor([[0.0]], device=x.device))
@@ -117,7 +120,7 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
     optimiser = optim.Adam(model.parameters(), lr=0.01)
 
     # Continue training on the full dataset
-    for epoch in range(20000):
+    for epoch in range(10000):
         loss = compute_loss(model, x_train[1:-1], weights[1:-1], epsilon)
         optimiser.zero_grad()
         loss.backward()
@@ -145,8 +148,8 @@ if __name__ == "__main__":
 
     # Getting Collocation Points and weights
     uniform, uniform_weights = generate_training_points(num_points=1000)
-    #gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
-    sin, sin_weights = generate_training_points(method='sin', num_points=1000)
+    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
+    # sin, sin_weights = generate_training_points(method='sin', num_points=1000)
     # gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
     # lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
     # lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
@@ -155,8 +158,8 @@ if __name__ == "__main__":
 
     # Plotting Quadratures
     create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
-    #create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
-    create_results(sin, sin_weights, 'black', 'PINN: Sin')
+    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss 1000pts')
+    # create_results(sin, sin_weights, 'black', 'PINN: Sin')
     # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
     # create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
     # create_results(outside, outside_weights, 'black', 'PINN: Outside')
