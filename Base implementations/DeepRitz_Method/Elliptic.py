@@ -6,8 +6,14 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .1
+EPSILON = 0.1
 
+class ReLU3(nn.Module):
+    def __init__(self):
+        super(ReLU3, self).__init__()
+
+    def forward(self, x):
+        return torch.where(x > 0, x**3, torch.zeros_like(x))
 
 # Defined PINN via PyTorch Structure, 2 Hidden Layers
 class PINN(nn.Module):
@@ -15,9 +21,9 @@ class PINN(nn.Module):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(1, 50),
-            nn.Tanh(),
+            ReLU3(),
             nn.Linear(50, 50),
-            nn.Tanh(),
+            ReLU3(),
             nn.Linear(50, 1),
         )
 
