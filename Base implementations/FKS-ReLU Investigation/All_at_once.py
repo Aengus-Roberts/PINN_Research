@@ -4,56 +4,15 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
-import os
 
-EPSILON = 0.01
-INNER_EPOCHS = 1000
-OUTER_EPOCHS = 2
+EPSILON = 1
 
-class Knots(nn.Module):
+class FKS(nn.Module):
     def __init__(self, knot_points):
-        super(Knots, self).__init__()
-        self.coeffs = torch.randn(len(knot_points), dtype=torch.float32)
-        self.knot_points = nn.Parameter(torch.tensor(knot_points, dtype=torch.float32))
-        self.kminus = self.knot_points[:-2]
-        self.ki = self.knot_points[1:-1]
-        self.kplus = self.knot_points[2:]
-
-    def interior_spline(self, x):
-        alpha = 1/(self.ki-self.kminus)
-        beta = (self.kplus - self.kminus)/((self.kplus - self.ki)*(self.ki-self.kminus))
-        gamma = 1/(self.kplus - self.ki)
-        xT = x.reshape(-1,1)
-
-        output = torch.relu(xT-self.kminus)*alpha - torch.relu(xT-self.ki)*beta + torch.relu(xT-self.kplus)*gamma
-        return output
-
-    def left_spline(self,x):
-        k0 = self.knot_points[0]
-        k1 = self.knot_points[1]
-        return torch.relu(k1-x)/(k1-k0)
-
-    def right_spline(self,x):
-        kminus = self.knot_points[-2]
-        kfinal = self.knot_points[-1]
-        return torch.relu(x-kminus)/(kfinal-kminus)
-
-    def forward(self, x):
-        # x: shape (N, 1), knot_points: shape (K,) → reshape to (1, K) for broadcasting
-        # FKS: shape (N,K)
-        FKS = torch.zeros(len(x),len(self.knot_points), dtype=torch.float32, device=x.device)
-        FKS[:, 0] = self.left_spline(x).squeeze()  # first column
-        FKS[:, -1] = self.right_spline(x).squeeze() # last column
-        FKS[:, 1:-1] = self.interior_spline(x)
-        coeffs = self.coeffs
-        output = torch.matmul(FKS, coeffs)
-        return output
-
-class Weights(nn.Module):
-    def __init__(self, knot_points):
-        super(Weights, self).__init__()
+        super(FKS, self).__init__()
         self.coeffs = nn.Parameter(torch.randn(len(knot_points), dtype=torch.float32))
-        self.knot_points = torch.tensor(knot_points, dtype=torch.float32)
+        self.interior_coeffs = nn.Parameter(torch.ones(len(knot_points)-2, dtype=torch.float32))
+        self.knot_points = nn.Parameter(torch.tensor(knot_points, dtype=torch.float32))
         self.kminus = self.knot_points[:-2]
         self.ki = self.knot_points[1:-1]
         self.kplus = self.knot_points[2:]
@@ -161,54 +120,35 @@ def get_quad_points(N=500,type='uniform'):
 
         return x_quad, w_quad #returns 2 tensors, length N
 
+def train_model(x, w):
+    knot_points = get_knot_points('thirds')
+    model = FKS(knot_points)
+    #optimiser = optim.Adam(model.parameters(), lr = 0.05)
+    optimiser = optim.LBFGS(model.parameters(), lr=0.05)
 
-def train_models(x,w):
-    knot_points = get_knot_points('uniform')
-    knotModel = Knots(knot_points)
-    coeffModel = Weights(knot_points)
+    def closure():
+        optimiser.zero_grad()
+        loss = compute_energy_loss(model, x, w, EPSILON)  # Correct call
+        loss.backward()
+        return loss
 
-    #Inner Training Loop
-    def trainParam(model, parameter):
-        if model == knotModel:
-            model.coeffs = parameter
-        elif model == coeffModel:
-            model.knot_points = parameter
-        optimiser = optim.LBFGS(model.parameters(), lr=0.05)
+    for epoch in range(10000):
+        #optimiser.zero_grad()
+        #loss = compute_energy_loss(model, x, w, EPSILON)
+        #loss = cheating_loss(model, x, w, EPSILON)
+        #loss.backward()
+        optimiser.step(closure)
 
-        def closure():
-            optimiser.zero_grad()
-            loss = compute_energy_loss(model, x, w, EPSILON)  # Correct call
-            loss.backward()
-            return loss
+        #if epoch % 500 == 0:
+            #print(f"Epoch {epoch}, Loss: {loss.item():.6f}")
 
-        for inner_epoch in range(INNER_EPOCHS):
-            if inner_epoch % 500 == 0:
-                print(str(outer_epoch) + ":" + str(inner_epoch))
-            optimiser.step(closure)
-
-        return model
-
-    #Outer Training Loop
-    for outer_epoch in range(OUTER_EPOCHS):
-        coeffs = coeffModel.coeffs.detach().requires_grad_(True)
-        knotModel = trainParam(knotModel, coeffs)
-        knots = knotModel.knot_points.detach().requires_grad_(True)
-        coeffModel = trainParam(coeffModel, knots)
-
-    return coeffModel
-
+    return model
 
 # Plot the results
 def create_results(x_test, x, w, color='red', label=''):
-    model = train_models(x,w)
+    model = train_model(x,w)
     y_pred = model(x_test).detach().numpy()
     plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
-
-    directory = "FKSmodelParams/" + str(EPSILON)
-    os.makedirs(directory, exist_ok=True)
-    filename = directory + "/" + label + ".npy"
-    with open(filename,'wb') as file:
-        np.save(file, np.array([model.coeffs.detach().numpy(),model.knot_points.detach().numpy()]))
 
 def main():
     x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
@@ -226,7 +166,7 @@ def main():
     plt.xlabel('x')
     plt.ylabel('u(x)')
     plt.legend()
-    title = r"Linear Spline, Free Knots, DRM Energy, ε = {:.2f}".format(EPSILON)
+    title = r"DRM, LBFGS, Fixed Endpoints, ε = {:.2f}".format(EPSILON)
     #title = r"Fixed Knots, Fixed Endpoints: $-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
     plt.title(title)
     plt.show()

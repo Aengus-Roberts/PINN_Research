@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = 0.1
+EPSILON = 0.01
 
 class ReLU3(nn.Module):
     def __init__(self):
@@ -20,11 +20,9 @@ class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, 50),
-            ReLU3(),
-            nn.Linear(50, 50),
-            ReLU3(),
-            nn.Linear(50, 1),
+            nn.Linear(1, 100),
+            nn.Tanh(),
+            nn.Linear(100, 1),
         )
 
     def forward(self, x):
@@ -32,28 +30,19 @@ class PINN(nn.Module):
 
 
 # Compute derivatives using PyTorch autograd
-def compute_loss(model, x, weights=None, EPSILON=EPSILON):
-    x.requires_grad_(True)
-    u = model(x)
-    u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
-    u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+def compute_loss(model, x, w=None, epsilon=EPSILON):
+    x.requires_grad = True
+    u = model(x).view(-1, 1)
+    du = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    # ODE residual: -epsilon^2u"(x) + u(x) - 1
-    # Weak Formulation of ODE: epsilon^2 (u'(x))^2 / 2 + u^2(x)/2 - u(x)
-    residual = (EPSILON ** 2) * (u_x**2)/2 + (u**2)/2 - u
-
-    # Compute weighted physics loss if weights are provided
-    if weights is not None:
-        physics_loss = torch.sum(weights * residual ** 2)  # Weighted sum
-    else:
-        physics_loss = torch.mean(residual ** 2)  # Uniform weight (default)
+    integrand = (epsilon ** 2 / 2) * du ** 2 + (1 / 2) * u ** 2 - u
 
     # Boundary condition loss: u(0) = u(1) = 0
     u0_pred = model(torch.tensor([[0.0]], device=x.device))
     u1_pred = model(torch.tensor([[1.0]], device=x.device))
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
-    return physics_loss + bc_loss
+    return torch.sum(w * integrand) + bc_loss
 
 
 def gauss_lobatto_nodes_weights(n):
@@ -164,7 +153,7 @@ if __name__ == "__main__":
 
     # Plotting Quadratures
     create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
-    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss 1000pts')
+    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
     # create_results(sin, sin_weights, 'black', 'PINN: Sin')
     # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
     # create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
@@ -175,6 +164,6 @@ if __name__ == "__main__":
     plt.xlabel('x')
     plt.ylabel('u(x)')
     plt.legend()
-    title = r"$-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
+    title = r"DRM: $-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
     plt.title(title)
     plt.show()

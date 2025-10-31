@@ -38,7 +38,7 @@ def compute_energy_loss(model, x_quad, w_quad, epsilon):
     using quadrature points x_quad and weights w_quad.
     """
     x_quad.requires_grad_(True)
-    y = model(x_quad)
+    y = model(x_quad).view(-1,1)
 
     # First derivative y'
     dy = torch.autograd.grad(y, x_quad, grad_outputs=torch.ones_like(y), create_graph=True)[0]
@@ -81,7 +81,7 @@ def train_model(x_quad, w_quad):
     model = KnotReLU(knot_points)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
-    for epoch in range(100000):
+    for epoch in range(10000):
         optimizer.zero_grad()
         loss = compute_energy_loss(model, x_quad, w_quad, EPSILON)
         loss.backward()

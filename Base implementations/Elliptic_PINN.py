@@ -26,7 +26,7 @@ class PINN(nn.Module):
 # Compute derivatives using PyTorch autograd
 def compute_loss(model, x, weights=None, EPSILON=EPSILON):
     x.requires_grad_(True)
-    u = model(x)
+    u = model(x).view(-1,1)
     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
@@ -145,20 +145,20 @@ if __name__ == "__main__":
 
     # Getting Collocation Points and weights
     uniform, uniform_weights = generate_training_points(num_points=1000)
-    #gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
-    sin, sin_weights = generate_training_points(method='sin', num_points=1000)
+    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
+    #sin, sin_weights = generate_training_points(method='sin', num_points=1000)
     # gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
     # lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
     # lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
-    # thirds,thirds_weights = generate_training_points(method='thirds', num_points=30)
+    thirds,thirds_weights = generate_training_points(method='thirds', num_points=1000)
     # outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
 
     # Plotting Quadratures
     create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
-    #create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
-    create_results(sin, sin_weights, 'black', 'PINN: Sin')
+    create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
+    #create_results(sin, sin_weights, 'black', 'PINN: Sin')
     # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
-    # create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
+    create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
     # create_results(outside, outside_weights, 'black', 'PINN: Outside')
     # create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
     # create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')

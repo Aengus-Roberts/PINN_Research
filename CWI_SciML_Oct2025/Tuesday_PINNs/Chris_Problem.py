@@ -54,7 +54,7 @@ def compute_loss(model: nn.Module, x_interior: torch.Tensor):
     f = forcing_function(x_interior)
 
     # evaluating u(x), du/dx at boundary points
-    x_boundary = torch.tensor([[0.]], requires_grad=True)
+    x_boundary = torch.tensor([0.], requires_grad=True)
     u_bc = model(x_boundary)
     du_bc = grad(u_bc, x_boundary)
 
@@ -105,7 +105,7 @@ def train_PINN(x_train):
 
 # Helper function to plot results
 
-def create_results(x_train, x_test, color='red', label=''):
+def create_results(x_train,x_test, color='red', label=''):
     model = train_PINN(x_train)
     y_pred = model(x_test).detach().numpy()
     plt.plot(x_test.detach().numpy(), y_pred, label=label, color=color, linestyle='--')

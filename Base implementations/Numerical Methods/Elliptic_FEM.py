@@ -52,7 +52,7 @@ def visualize():
     plt.legend()
     plt.xlabel('x')
     plt.ylabel('u(x)')
-    plt.title(r'FEM vs Exact Solution')
+    plt.title(r'FEM, Mesh Size = 0.01')
     plt.grid(True)
     return plt
 
