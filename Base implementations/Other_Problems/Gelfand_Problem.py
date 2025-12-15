@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
 
-EPSILON = .01
+LAMBDA = 1
+EPSILON = 0.01
 
 
 # Defined PINN via PyTorch Structure, 2 Hidden Layers
@@ -24,14 +25,14 @@ class PINN(nn.Module):
 
 
 # Compute derivatives using PyTorch autograd
-def compute_loss(model, x, weights=None, EPSILON=EPSILON):
+def compute_loss(model, x, weights=None):
     x.requires_grad_(True)
     u = model(x).view(-1,1)
     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
     # ODE residual: -epsilon^2u"(x) + u(x) - 1
-    residual = -(EPSILON ** 2) * u_xx + u - 1
+    residual =  u_xx + LAMBDA * torch.exp(u)
 
     # Compute weighted physics loss if weights are provided
     if weights is not None:
@@ -111,14 +112,14 @@ def generate_training_points(method='uniform', num_points=10):
                                                                                    dtype=torch.float32)
 
 
-def train_PINN(x_train, weights, epsilon=EPSILON):
+def train_PINN(x_train, weights):
     # Training the PINN
     model = PINN()
     optimiser = optim.Adam(model.parameters(), lr=0.01)
 
     # Continue training on the full dataset
     for epoch in range(20000):
-        loss = compute_loss(model, x_train[1:-1], weights[1:-1], epsilon)
+        loss = compute_loss(model, x_train[1:-1], weights[1:-1])
         optimiser.zero_grad()
         loss.backward()
         optimiser.step()

@@ -7,9 +7,9 @@ from fontTools.misc.bezierTools import epsilon
 from scipy.special import roots_legendre
 import os
 
-EPSILON = 0.1
-INNER_EPOCHS = 5000
-OUTER_EPOCHS = 10
+EPSILON =0.1
+INNER_EPOCHS = 1000
+OUTER_EPOCHS = 5
 KNOT_NUMBER = 100
 QUAD_NUMBER = 200
 
@@ -69,7 +69,7 @@ def compute_energy_loss(model, x, w, epsilon):
     u = model(x).view(-1, 1)
     du = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    integrand = torch.exp_(-x/epsilon) * ((epsilon/2)*du**2 - u)
+    integrand = torch.exp(-x/epsilon) * ((epsilon/2)*du**2 - u)
 
 
     # Boundary condition loss: u(0) = u(1) = 0
@@ -133,7 +133,34 @@ def get_quad_points(N=QUAD_NUMBER, type='uniform'):
         w[1:-1] = 0.5 * (h[1:] + h[:-1])
         w[-1] = 0.5 * h[-1]
         w_quad = w.unsqueeze(1)
-
+    elif type == 'left':
+        N_L = int(np.floor(N / 2))
+        N_R = N - N_L
+        left = torch.linspace(0, EPSILON, N_L + 1)[:-1]
+        right = torch.linspace(EPSILON, 1, N_R)
+        x = torch.cat((left, right))
+        x_quad = x.unsqueeze(1)
+        # Trapezoidal Weightings
+        w = torch.zeros_like(x)
+        h = x[1:] - x[:-1]
+        w[0] = 0.5 * h[0]
+        w[1:-1] = 0.5 * (h[1:] + h[:-1])
+        w[-1] = 0.5 * h[-1]
+        w_quad = w.unsqueeze(1)
+    elif type == 'right':
+        N_L = int(np.floor(N / 2))
+        N_R = N - N_L
+        left = torch.linspace(0, 1-EPSILON, N_L + 1)[:-1]
+        right = torch.linspace(1-EPSILON, 1, N_R)
+        x = torch.cat((left, right))
+        x_quad = x.unsqueeze(1)
+        # Trapezoidal Weightings
+        w = torch.zeros_like(x)
+        h = x[1:] - x[:-1]
+        w[0] = 0.5 * h[0]
+        w[1:-1] = 0.5 * (h[1:] + h[:-1])
+        w[-1] = 0.5 * h[-1]
+        w_quad = w.unsqueeze(1)
 
     else:
         raise ValueError("Unsupported quadrature method")
@@ -176,6 +203,25 @@ def train_model(x, w):
     model = FKS(knot_points)
 
     # Inner Training Loop
+
+    def trainParam(parameter):
+        if parameter == 0:
+            optimiser = optim.Adam([model.coeffs], lr=0.01)
+        else:
+            optimiser = optim.Adam([model.knot_points], lr=0.01)
+
+    # Continue training on the full dataset
+        for epoch in range(20000):
+            loss = compute_energy_loss(model, x, w, EPSILON)
+            optimiser.zero_grad()
+            loss.backward()
+            optimiser.step()
+
+        if epoch % 500 == 0:
+            print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
+
+        return model
+"""
     def trainParam(parameter):
         if parameter == 0:
             optimiser = optim.LBFGS([model.coeffs], lr=0.01, max_iter=INNER_EPOCHS)
@@ -191,6 +237,7 @@ def train_model(x, w):
         optimiser.step(closure)
 
         return model
+"""
 
     # Outer Training Loop
     for outer_epoch in range(OUTER_EPOCHS):
@@ -219,17 +266,19 @@ def create_results(x_test, x, w, color='red', label=''):
 
 def main():
     x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
-    B = 1 / (1 - np.exp(-1 / EPSILON))
-    u1 = lambda x: B * (np.exp(-x / EPSILON) - 1) + x
+    B = 1 / (1 - np.exp(1 / EPSILON))
+    u1 = lambda x:x - B * (1- np.exp(x / EPSILON))
     y_true = np.array([u1(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
-    x_uniform, w_uniform = get_quad_points(type='uniform')
-    x_gauss, w_gauss = get_quad_points(type='gauss')
-    x_thirds, w_thirds = get_quad_points(type='thirds')
-    create_results(x_test, x_uniform, w_uniform, color='red', label='Uniform')
-    create_results(x_test, x_gauss, w_gauss, color='blue', label='Gaussian')
-    create_results(x_test, x_thirds, w_thirds, color='orange', label='Thirds')
+    #x_uniform, w_uniform = get_quad_points(type='uniform')
+    #x_gauss, w_gauss = get_quad_points(type='gauss')
+    #x_thirds, w_thirds = get_quad_points(type='thirds')
+    x_right, w_right = get_quad_points(type='right')
+    #create_results(x_test, x_uniform, w_uniform, color='red', label='Uniform')
+    #create_results(x_test, x_gauss, w_gauss, color='blue', label='Gaussian')
+    #create_results(x_test, x_thirds, w_thirds, color='orange', label='Thirds')
+    create_results(x_test, x_right, w_right, color='blue', label='Left')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')

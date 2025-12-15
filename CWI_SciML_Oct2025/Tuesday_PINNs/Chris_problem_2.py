@@ -64,7 +64,7 @@ def compute_loss(model: nn.Module, x: torch.Tensor):
     ivp_loss = torch.mean(ivp_1 ** 2 + ivp_2 ** 2)
 
     return interior_loss + ivp_loss
-
+  `
 
 # Generating collocation points
 
