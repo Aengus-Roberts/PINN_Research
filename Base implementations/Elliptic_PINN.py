@@ -115,6 +115,7 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
     # Training the PINN
     model = PINN()
     optimiser = optim.Adam(model.parameters(), lr=0.01)
+    loss_list = []
 
     # Continue training on the full dataset
     for epoch in range(20000):
@@ -125,14 +126,19 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
 
         if epoch % 500 == 0:
             print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
+        loss_list.append(loss.item())
 
-    return model
+    return model, loss_list
 
 
 # Plot the results
 def create_results(quadrature, weights, color='red', label=''):
-    model = train_PINN(quadrature, weights)
+    model, loss_list = train_PINN(quadrature, weights)
     y_pred = model(x_test).detach().numpy()
+    plt.plot([i for i in range(len(loss_list))], loss_list, label=label)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.show()
     plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
 
 

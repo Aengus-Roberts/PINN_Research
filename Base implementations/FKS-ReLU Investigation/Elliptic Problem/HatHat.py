@@ -5,49 +5,55 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 
-EPSILON = 0.01
-a = 5
+EPSILON = 1
+LAYERS = 2
 
 class FKS(nn.Module):
     def __init__(self, knot_points):
         super(FKS, self).__init__()
-        self.coeffs = nn.Parameter(torch.randn(len(knot_points), dtype=torch.float32))
-        self.interior_coeffs = nn.Parameter(torch.ones(len(knot_points)-2, dtype=torch.float32))
+        self.coeffs = nn.Parameter(torch.randn((LAYERS,len(knot_points[0])), dtype=torch.float32))
         self.knot_points = torch.tensor(knot_points, dtype=torch.float32)
-        self.kminus = self.knot_points[:-2]
-        self.ki = self.knot_points[1:-1]
-        self.kplus = self.knot_points[2:]
 
-    def interior_spline(self, x):
-        alpha = 1/(self.ki-self.kminus)
-        beta = (self.kplus - self.kminus)/((self.kplus - self.ki)*(self.ki-self.kminus))
-        gamma = 1/(self.kplus - self.ki)
+    def interior_spline(self, x, knot_points):
+        kminus = knot_points[:-2]
+        ki = knot_points[1:-1]
+        kplus = knot_points[2:]
+        alpha = 1/(ki-kminus)
+        beta = (kplus - kminus)/((kplus - ki)*(ki-kminus))
+        gamma = 1/(kplus - ki)
         xT = x.reshape(-1,1)
 
-        output = torch.relu(xT-self.kminus)*alpha - torch.relu(xT-self.ki)*beta + torch.relu(xT-self.kplus)*gamma
+        output = torch.relu(xT-kminus)*alpha - torch.relu(xT-ki)*beta + torch.relu(xT-kplus)*gamma
         return output
 
-    def left_spline(self,x):
-        k0 = self.knot_points[0]
-        k1 = self.knot_points[1]
+    def left_spline(self,x, knot_points):
+        k0 = knot_points[0]
+        k1 = knot_points[1]
         return torch.relu(k1-x)/(k1-k0)
 
-    def right_spline(self,x):
-        kminus = self.knot_points[-2]
-        kfinal = self.knot_points[-1]
+    def right_spline(self,x, knot_points):
+        kminus = knot_points[-2]
+        kfinal = knot_points[-1]
         return torch.relu(x-kminus)/(kfinal-kminus)
 
-    def forward(self, x):
-        # x: shape (N, 1), knot_points: shape (K,) → reshape to (1, K) for broadcasting
-        # FKS: shape (N,K)
-        FKS = torch.zeros(len(x),len(self.knot_points), dtype=torch.float32, device=x.device)
-        FKS[:, 0] = self.left_spline(x).squeeze()  # first column
-        FKS[:, -1] = self.right_spline(x).squeeze() # last column
-        FKS[:, 1:-1] = self.interior_spline(x)
-        new_coeffs = torch.cat((torch.tensor([0]),self.interior_coeffs,torch.tensor([0])))
-        coeffs = new_coeffs
+    def layer(self,x, knot_points, coeffs):
+        FKS = torch.zeros(len(x), len(knot_points), dtype=torch.float32, device=x.device)
+        FKS[:, 0] = self.left_spline(x, knot_points).squeeze()  # first column
+        FKS[:, -1] = self.right_spline(x, knot_points).squeeze()  # last column
+        FKS[:, 1:-1] = self.interior_spline(x, knot_points) # interior columns
         output = torch.matmul(FKS, coeffs)
         return output
+
+    def rescale(self,x):
+        x = x + x.min()
+        x = x / x.max()
+        return x
+
+    def forward(self, x):
+        layer1 = self.layer(x, self.knot_points[0], self.coeffs[0])
+        layer1 = self.rescale(layer1)
+        layer2 = self.layer(layer1, self.knot_points[1], self.coeffs[1])
+        return layer2
 
 def compute_energy_loss(model, x, w, epsilon):
     x.requires_grad = True
@@ -76,7 +82,7 @@ def cheating_loss(model, x, w, epsilon):
     return  interior_loss + bc_loss
 
 
-def get_knot_points(distribution, N=50):
+def get_knot_points(distribution, N=200):
     if distribution == "uniform":
         knot_points = torch.linspace(0, 1, N, dtype=torch.float32)
 
@@ -87,10 +93,6 @@ def get_knot_points(distribution, N=50):
         mid_knot_points = np.linspace(EPSILON, 1-EPSILON, N_i)
         end_knot_points = np.linspace(1-EPSILON, 1, N_b + 1)[1:]
         knot_points = np.concatenate((start_knot_points, mid_knot_points, end_knot_points))
-
-    elif distribution == "tanh":
-        x_vals = torch.linspace(0, 1, N, dtype=torch.float32)
-        knot_points = (torch.tanh(a*(x_vals - 0.5)) + 1)/2
 
     return knot_points #Returns np.array length K
 
@@ -119,6 +121,20 @@ def get_quad_points(N=500,type='uniform'):
             w[1:-1] = 0.5 * (h[1:] + h[:-1])
             w[-1] = 0.5 * h[-1]
             w_quad = w.unsqueeze(1)
+        elif type == 'right':
+            N_L = int(np.floor(N / 2))
+            N_R = N - N_L
+            left = torch.linspace(0, 1 - EPSILON, N_L + 1)[:-1]
+            right = torch.linspace(1 - EPSILON, 1, N_R)
+            x = torch.cat((left, right))
+            x_quad = x.unsqueeze(1)
+            # Trapezoidal Weightings
+            w = torch.zeros_like(x)
+            h = x[1:] - x[:-1]
+            w[0] = 0.5 * h[0]
+            w[1:-1] = 0.5 * (h[1:] + h[:-1])
+            w[-1] = 0.5 * h[-1]
+            w_quad = w.unsqueeze(1)
 
 
         else:
@@ -127,10 +143,24 @@ def get_quad_points(N=500,type='uniform'):
         return x_quad, w_quad #returns 2 tensors, length N
 
 def train_model(x, w):
-    knot_points = get_knot_points('tanh')
+    layer1 = get_knot_points('uniform')
+    layer2 = get_knot_points('thirds')
+    knot_points = np.array([layer1, layer2])
     model = FKS(knot_points)
     #optimiser = optim.Adam(model.parameters(), lr = 0.05)
-    optimiser = optim.LBFGS(model.parameters(), lr=0.05)
+    optimiser = optim.Adam(model.parameters(), lr=0.001)
+
+    # Continue training on the full dataset
+    for epoch in range(10000):
+        loss = compute_energy_loss(model, x, w, EPSILON)
+        optimiser.zero_grad()
+        loss.backward()
+        optimiser.step()
+
+        if epoch % 500 == 0:
+            print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
+    """
+    optimiser = optim.LBFGS(model.parameters(), lr=0.001, max_iter=10000)
 
     def closure():
         optimiser.zero_grad()
@@ -138,16 +168,11 @@ def train_model(x, w):
         loss.backward()
         return loss
 
-    for epoch in range(10000):
-        #optimiser.zero_grad()
-        #loss = compute_energy_loss(model, x, w, EPSILON)
-        #loss = cheating_loss(model, x, w, EPSILON)
-        #loss.backward()
-        optimiser.step(closure)
+    optimiser.step(closure)
 
         #if epoch % 500 == 0:
             #print(f"Epoch {epoch}, Loss: {loss.item():.6f}")
-
+    """
     return model
 
 # Plot the results
@@ -165,14 +190,17 @@ def main():
     x_uniform, w_uniform = get_quad_points(type='uniform')
     x_gauss, w_gauss = get_quad_points(type='gauss')
     x_thirds, w_thirds = get_quad_points(type='thirds')
+    #x_right, w_right = get_quad_points(type='right')
     create_results(x_test, x_uniform, w_uniform, color='red',label='Uniform')
     create_results(x_test, x_gauss, w_gauss, color='blue',label='Gaussian')
     create_results(x_test, x_thirds, w_thirds, color='orange',label='Thirds')
+    #create_results(x_test, x_right, w_right, color='blue', label='Right')
+
 
     plt.xlabel('x')
     plt.ylabel('u(x)')
     plt.legend()
-    title = r"Linear Spline, Fixed Knots, DRM Energy, ε = {:.2f}".format(EPSILON)
+    title = r"Linear Spline, 2 Layer Fixed Knots, DRM Energy, ε = {:.4f}".format(EPSILON)
     #title = r"Fixed Knots, Fixed Endpoints: $-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
     plt.title(title)
     plt.show()
