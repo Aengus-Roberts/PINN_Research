@@ -5,7 +5,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 
-EPSILON = 0.05
+EPSILON = 0.1
 
 class FKS(nn.Module):
     def __init__(self, knot_points):
@@ -174,8 +174,8 @@ def create_results(x_test, x, w, color='red', label=''):
 
 def main():
     x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
-    B = 1 / (1 - np.exp(1 / EPSILON))
-    u1 = lambda x:x - B * (1 - np.exp(x / EPSILON))
+    B = 1 / (np.exp(1 / EPSILON) - 1)
+    u1 = lambda x:x - B * (np.exp(x / EPSILON) - 1)
     y_true = np.array([u1(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
