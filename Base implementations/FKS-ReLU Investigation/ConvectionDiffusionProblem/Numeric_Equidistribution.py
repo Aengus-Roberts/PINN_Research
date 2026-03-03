@@ -9,8 +9,8 @@ import os
 EPSILON = 0.1
 INNER_EPOCHS = 500
 OUTER_EPOCHS = 50
-KNOT_NUMBER = 50
-QUAD_NUMBER = 200
+KNOT_NUMBER = 20
+QUAD_NUMBER = 80
 
 
 class FKS(nn.Module):
@@ -283,9 +283,9 @@ def create_results(x_test, x, w, color='red', label=''):
 
 
 def main():
-    x_test = torch.linspace(0, 1, 100).reshape(-1, 1)
-    A = np.exp(1/EPSILON)/(1-np.exp(1/EPSILON))
-    u2 = lambda x: x + A*(1-np.exp(-1/EPSILON))
+    x_test = torch.linspace(0, 1, 1000).reshape(-1, 1)
+    A = 1/(np.exp(1/EPSILON) - 1)
+    u2 = lambda x: x + A*(1-np.exp(x/EPSILON))
     y_true = np.array([u2(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
