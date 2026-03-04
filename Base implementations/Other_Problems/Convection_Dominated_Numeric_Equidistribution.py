@@ -307,10 +307,8 @@ def main():
 
     x_uniform, w_uniform = get_quad_points(type='uniform')
     x_gauss, w_gauss = get_quad_points(type='gauss')
-    x_right, w_right = get_quad_points(type='thirds')
     create_results(x_test, x_uniform, w_uniform, color='red', label='Uniform')
     create_results(x_test, x_gauss, w_gauss, color='blue', label='Gaussian')
-    create_results(x_test, x_right, w_right, color='orange', label='Right')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')
