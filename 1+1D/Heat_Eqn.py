@@ -3,14 +3,15 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
 from scipy.special import roots_legendre
-import os
 
 INNER_EPOCHS = 100
 OUTER_EPOCHS = 10
 KNOT_NUMBER = 100
 QUAD_NUMBER = 500
-TIMESTEPS = 1000
+TIMESTEPS = 100
 T = 1
 deltaT = T / TIMESTEPS
 
@@ -188,8 +189,35 @@ def train_model(x, w, u_0):
 
 def main():
     x_uniform, w_uniform = get_quad_points(type='uniform')
-    u_0 = torch.sin(torch.pi * x_uniform)
+    u_0 = lambda x: torch.sin(torch.pi*x)
     timestepped_u = [u_0]
 
     for t in range(TIMESTEPS):
+        print("Timestep: ", t)
         timestepped_u.append(train_model(x_uniform, w_uniform, timestepped_u[-1]))
+
+
+    x = torch.linspace(0,1,10)
+    y = torch.linspace(0,1,TIMESTEPS+1)
+    z_list = [timestepped_u[0](x).detach().numpy()]
+    for i in range(1, TIMESTEPS+1):
+        z_list.append(timestepped_u[i](x.unsqueeze(1)).detach().numpy())
+    Z = np.array(z_list)
+    X, Y = np.meshgrid(x.detach().numpy(), y.detach().numpy())
+
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+                           linewidth=0, antialiased=False)
+
+    # Customize the z axis.
+    ax.set_zlim(-1.01, 1.01)
+    ax.zaxis.set_major_locator(LinearLocator(10))
+    # A StrMethodFormatter is used automatically
+    ax.zaxis.set_major_formatter('{x:.02f}')
+
+    # Add a color bar which maps values to colors.
+    fig.colorbar(surf, shrink=0.5, aspect=5)
+
+    plt.show()
+
+main()
