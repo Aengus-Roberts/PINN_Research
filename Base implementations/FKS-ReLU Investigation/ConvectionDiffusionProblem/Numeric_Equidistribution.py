@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 import os
 
-EPSILON = 0.1
+EPSILON = 1
 INNER_EPOCHS = 500
 OUTER_EPOCHS = 50
 KNOT_NUMBER = 20

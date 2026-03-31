@@ -8,8 +8,8 @@ from scipy.special import roots_legendre
 import os
 
 EPSILON =0.1
-INNER_EPOCHS = 1000
-OUTER_EPOCHS = 5
+INNER_EPOCHS = 100
+OUTER_EPOCHS = 20
 KNOT_NUMBER = 100
 QUAD_NUMBER = 200
 
@@ -221,7 +221,7 @@ def train_model(x, w):
             print(f"Full Training Epoch {epoch}, Loss: {loss.item():.6f}")
 
         return model
-"""
+
     def trainParam(parameter):
         if parameter == 0:
             optimiser = optim.LBFGS([model.coeffs], lr=0.01, max_iter=INNER_EPOCHS)
@@ -237,7 +237,7 @@ def train_model(x, w):
         optimiser.step(closure)
 
         return model
-"""
+
 
     # Outer Training Loop
     for outer_epoch in range(OUTER_EPOCHS):
