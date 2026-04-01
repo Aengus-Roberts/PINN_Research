@@ -6,17 +6,15 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 import os
 
-EPSILON = 0.01
-INNER_EPOCHS = 500
-OUTER_EPOCHS = 50
-KNOT_NUMBER = 200
-QUAD_NUMBER = 2000
-
+EPSILON = 0.001
+INNER_EPOCHS = 100
+OUTER_EPOCHS = 100
+KNOT_NUMBER = 20
 
 class FKS(nn.Module):
     def __init__(self, knot_points):
         super(FKS, self).__init__()
-        self.coeffs = nn.Parameter(torch.randn(len(knot_points) - 1, dtype=torch.float32))
+        self.coeffs = nn.Parameter(torch.ones(len(knot_points) - 1, dtype=torch.float32))
         self.knot_points = knot_points
 
     def set_knot_points(self, knot_points):
@@ -55,7 +53,7 @@ class FKS(nn.Module):
         return torch.relu(x - kminus) / (kfinal - kminus)
 
     def forward(self, x):
-        # x: shape (N, 1), knot_points: shape (K-1 , ) → reshape to (1, K - 1) for broadcasting
+        # x: shape (N, 1)
         # FKS: shape (N,K - 1)
         FKS = torch.zeros(len(x), len(self.knot_points) - 1, dtype=torch.float32, device=x.device)
         # FKS[:, 0] = self.left_spline(x).squeeze()  # first column
@@ -124,40 +122,9 @@ def get_knot_points(distribution, N=KNOT_NUMBER):
     return knot_points  # Returns np.array length K
 
 
-# Quadrature points and weights (e.g., Gauss-Legendre)
-def get_quad_points(N=QUAD_NUMBER, type='uniform'):
-    if type == 'uniform':
-        x_quad = torch.linspace(0, 1, N).unsqueeze(1)
-        w_quad = torch.tensor([1 / N for _ in range(N)], dtype=torch.float32).unsqueeze(1)
-    elif type == 'gauss':
-        x_quad_np, w_quad_np = roots_legendre(N)
-        x_quad = torch.tensor((x_quad_np + 1) / 2, dtype=torch.float32).unsqueeze(1)  # map from [-1,1] to [0,1]
-        w_quad = torch.tensor(w_quad_np / 2, dtype=torch.float32).unsqueeze(1)  # adjust weights accordingly
-    elif type == 'thirds':
-        N_b = int(np.floor(N / 3))
-        N_i = N - 2 * N_b
-        start = torch.linspace(0, EPSILON, N_b + 2)[1:-1]
-        mid = torch.linspace(EPSILON, 1 - EPSILON, N_i)
-        end = torch.linspace(1 - EPSILON, 1, N_b + 2)[1:-1]
-        x = torch.cat((start, mid, end))
-        x_quad = x.unsqueeze(1)
-        # Trapezoidal Weightings
-        w = torch.zeros_like(x)
-        h = x[1:] - x[:-1]
-        w[0] = 0.5 * h[0]
-        w[1:-1] = 0.5 * (h[1:] + h[:-1])
-        w[-1] = 0.5 * h[-1]
-        w_quad = w.unsqueeze(1)
-
-
-    else:
-        raise ValueError("Unsupported quadrature method")
-
-    return x_quad, w_quad  # returns 2 tensors, length N
-
-def evaluate_equidistribution(model, method = 0):
+def evaluate_equidistribution(model, method=0):
     RESOLUTION = 100
-    #Sampling domain according to previous Knot Point Distribution
+    # Sampling domain according to previous Knot Point Distribution
     X = []
     segments = []
     knots = model.knot_points
@@ -169,13 +136,13 @@ def evaluate_equidistribution(model, method = 0):
     X.requires_grad = True
     u = model(X)
     if method == 0:
-        d2u = (u - 1)/EPSILON**2 #Cheating trick by rearranging -eps^2 u" + u = 1 -> u" = (u-1)/eps^2
+        d2u = (u - 1) / EPSILON ** 2  # Cheating trick by rearranging -eps^2 u" + u = 1 -> u" = (u-1)/eps^2
     elif method == 1:
-        du = torch.autograd.grad(u, X, grad_outputs=torch.ones_like(u),create_graph=True, retain_graph=True)[0]
-        d2u = torch.autograd.grad(du, X, grad_outputs=torch.ones_like(du),create_graph=True)[0]
+        du = torch.autograd.grad(u, X, grad_outputs=torch.ones_like(u), create_graph=True, retain_graph=True)[0]
+        d2u = torch.autograd.grad(du, X, grad_outputs=torch.ones_like(du), create_graph=True)[0]
 
-    #Determining Monitor Function u"^(2/5)
-    Monitor = d2u.abs().pow(2/5).view(-1) + 1e-10
+    # Determining Monitor Function u"^(2/5)
+    Monitor = d2u.abs().pow(2 / 5).view(-1) + 1e-10
 
     dx = X[1:] - X[:-1]
     trap = 0.5 * (Monitor[1:] + Monitor[:-1]) * dx
@@ -184,7 +151,8 @@ def evaluate_equidistribution(model, method = 0):
     G_Normalised = G / G[-1]
     return G_Normalised, X
 
-def search_array(G,X,N):
+
+def search_array(G, X, N):
     new_knots = np.empty(N)
     uniform_dist = np.linspace(0, 1, N)
     uniform_marker = 0
@@ -193,7 +161,10 @@ def search_array(G,X,N):
         while G[G_marker] < uniform_dist[uniform_marker]:
             G_marker += 1
         # At this point G marker points to the G that is one more than where the knot should be
-        new_knots[uniform_marker] = X[G_marker]
+        if X[G_marker] == X[-1]:
+            new_knots[uniform_marker] = 1.0
+        else:
+            new_knots[uniform_marker] = (X[G_marker] + X[G_marker + 1]) / 2
         uniform_marker += 1
     return torch.tensor(new_knots)
 
@@ -203,26 +174,38 @@ def get_updated_knots(model):
     new_knots = search_array(cumulative_integral, X, len(model.knot_points))
     return new_knots
 
-def get_adaptive_quadrature_points(model):
-    #TODO apply collocation method esque quadrature points at legendre points between knots
 
-def train_model(x, w):
+def get_adaptive_quadrature_points(model):
+    knots = model.knot_points.detach().numpy()
+    base_gauss_points = roots_legendre(2)[0]
+
+    # Element midpoints and half-widths
+    mid = 0.5 * (knots[:-1] + knots[1:])
+    half = 0.5 * (knots[1:] - knots[:-1])
+
+    # Broadcast to get all quadrature points
+    quad_points = mid[:, None] + half[:, None] * base_gauss_points
+
+    # Flatten to 1D array
+    quad_points = quad_points.ravel()
+
+    return torch.tensor(quad_points)
+
+
+def train_model():
     knot_points = get_knot_points('uniform')
     model = FKS(knot_points)
 
     # Inner Training Loop
-    def trainParam(parameter, outer_epoch):
+    def trainParam(parameter):
         if parameter == 0:
             optimiser = optim.LBFGS([model.coeffs], lr=0.01, max_iter=INNER_EPOCHS)
-            #TODO Adaptive_quad either gets implemented here
-            if outer_epoch == 0:
-                x_quad, w_quad = x, w
-            else:
-                x_quad =
+            x_quad = get_adaptive_quadrature_points(model)
+            w_quad = torch.ones_like(x_quad)
 
         def DRM_closure():
             optimiser.zero_grad()
-            loss = compute_energy_loss(model, x, w, EPSILON)
+            loss = compute_energy_loss(model, x_quad, w_quad, EPSILON)
             loss.backward()
             return loss
 
@@ -230,59 +213,21 @@ def train_model(x, w):
             optimiser.step(DRM_closure)
         return model
 
-
     # Outer Training Loop
     for outer_epoch in range(OUTER_EPOCHS):
         print("Outer Epoch: ", outer_epoch)
-        #TODO Or we apply adaptive Quad here, go away and think aengus
         model = trainParam(0)
         new_knot_points = get_updated_knots(model).detach()
         model.set_knot_points(new_knot_points)
+        print(model.knot_points.detach().numpy())
 
     return model
 
-
-def train_adam(x, w):
-    knot_points = get_knot_points('uniform')
-    model = FKS(knot_points)
-
-    # Inner Training Loop
-    def trainParam(parameter):
-        if parameter == 0:
-            optimiser = optim.Adam([model.coeffs], lr=0.01)
-        else:
-            optimiser = optim.Adam([model.interior_knot_points], lr=0.01)
-
-        for inner_epoch in range(INNER_EPOCHS):
-            if parameter == 0:
-                loss = compute_energy_loss(model, x, w, EPSILON)
-            else:
-                loss = compute_equidistribution_loss(model)
-            optimiser.zero_grad()
-            loss.backward()
-            optimiser.step()
-
-            if inner_epoch % 500 == 0:
-                print(f"Inner Training Epoch {inner_epoch}, Loss: {loss.item():.6f}")
-
-        return model
-
-    # Outer Training Loop
-    for outer_epoch in range(OUTER_EPOCHS):
-        print("Outer Epoch: ", outer_epoch)
-        model = trainParam(0)
-        model = trainParam(1)
-    return model
 
 # Plot the results
-def create_results(x_test, x, w, color='red', label=''):
-    model = train_model(x, w)
+def create_results(x_test, color='red', label=''):
+    model = train_model()
     y_pred = model(x_test).detach().numpy()
-    #plt.plot(x_test.numpy(), np.pow(np.abs((y_pred - 1) / EPSILON**2),2/5), color=color)
-    #zeros = np.zeros_like(model.knot_points.detach().numpy())
-    #plt.scatter(model.knot_points.detach().numpy(), zeros, color=color)
-    #plt.title("meow")
-    #plt.show()
     plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
     zeros = np.zeros_like(model.knot_points.detach().numpy())
     print(model.knot_points.detach().numpy())
@@ -305,18 +250,12 @@ def main():
     y_true = np.array([u2(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
-    x_uniform, w_uniform = get_quad_points(type='uniform')
-    x_gauss, w_gauss = get_quad_points(type='gauss')
-    x_thirds, w_thirds = get_quad_points(type='thirds')
-    #create_results(x_test, x_uniform, w_uniform, color='red', label='Uniform')
-    create_results(x_test, x_gauss, w_gauss, color='blue', label='Gaussian')
-    #create_results(x_test, x_thirds, w_thirds, color='orange', label='Thirds')
+    create_results(x_test, color='blue', label='Gaussian')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')
     plt.legend()
-    title = r"Linear Spline, Free Knots, DRM Energy, ε = {:.2f}".format(EPSILON)
-    # title = r"Fixed Knots, Fixed Endpoints: $-ε^2 u''(x) + u(x) = 1$, ε = {:.5f}".format(EPSILON)
+    title = r"Linear Spline, Equidistributed Knots, DRM Energy with Adaptive Quadrature, ε = {:.2f}".format(EPSILON)
     plt.title(title)
     plt.show()
 
