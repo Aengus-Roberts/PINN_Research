@@ -11,6 +11,7 @@ INNER_EPOCHS = 100
 OUTER_EPOCHS = 100
 KNOT_NUMBER = 20
 
+
 class FKS(nn.Module):
     def __init__(self, knot_points):
         super(FKS, self).__init__()
