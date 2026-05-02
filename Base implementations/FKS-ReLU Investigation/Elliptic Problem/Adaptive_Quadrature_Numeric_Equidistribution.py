@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 import os
 
-EPSILON = 0.001
-INNER_EPOCHS = 100
-OUTER_EPOCHS = 100
+EPSILON = 0.0001
+INNER_EPOCHS = 10
+OUTER_EPOCHS = 1000
 KNOT_NUMBER = 20
 
 
@@ -58,7 +58,7 @@ class FKS(nn.Module):
         # FKS: shape (N,K - 1)
         FKS = torch.zeros(len(x), len(self.knot_points) - 1, dtype=torch.float32, device=x.device)
         # FKS[:, 0] = self.left_spline(x).squeeze()  # first column
-        FKS[:, -1] = self.right_spline(x).squeeze()  # last column
+        # FKS[:, -1] = self.right_spline(x).squeeze()  # last column
         FKS[:, :-1] = self.interior_spline(x)
         coeffs = self.coeffs
         output = torch.matmul(FKS, coeffs)
@@ -126,7 +126,6 @@ def get_knot_points(distribution, N=KNOT_NUMBER):
 def evaluate_equidistribution(model, method=0):
     RESOLUTION = 100
     # Sampling domain according to previous Knot Point Distribution
-    X = []
     segments = []
     knots = model.knot_points
     for i in range(len(knots) - 1):
@@ -167,6 +166,7 @@ def search_array(G, X, N):
         else:
             new_knots[uniform_marker] = (X[G_marker] + X[G_marker + 1]) / 2
         uniform_marker += 1
+    new_knots[0] = 0.0
     return torch.tensor(new_knots)
 
 

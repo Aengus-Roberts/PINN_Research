@@ -3,15 +3,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("TkAgg")
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator
 from scipy.special import roots_legendre
 
-INNER_EPOCHS = 100
-OUTER_EPOCHS = 10
+INNER_EPOCHS = 10
+OUTER_EPOCHS = 100
 KNOT_NUMBER = 100
 QUAD_NUMBER = 500
-TIMESTEPS = 100
+TIMESTEPS = 20
 T = 1
 deltaT = T / TIMESTEPS
 
@@ -62,7 +64,7 @@ class FKS(nn.Module):
         # FKS: shape (N,K - 1)
         FKS = torch.zeros(len(x), len(self.knot_points) - 1, dtype=torch.float32, device=x.device)
         # FKS[:, 0] = self.left_spline(x).squeeze()  # first column
-        FKS[:, -1] = self.right_spline(x).squeeze()  # last column
+        # FKS[:, -1] = self.right_spline(x).squeeze()  # last column
         FKS[:, :-1] = self.interior_spline(x)
         coeffs = self.coeffs
         output = torch.matmul(FKS, coeffs)
@@ -110,7 +112,6 @@ def compute_energy_loss(model0, model1, x, w):
 def evaluate_equidistribution(model0, model1, method=0):
     RESOLUTION = 100
     # Sampling domain according to previous Knot Point Distribution
-    X = []
     segments = []
     knots = model1.knot_points
     for i in range(len(knots) - 1):
@@ -147,8 +148,12 @@ def search_array(G, X, N):
         while G[G_marker] < uniform_dist[uniform_marker]:
             G_marker += 1
         # At this point G marker points to the G that is one more than where the knot should be
-        new_knots[uniform_marker] = X[G_marker]
+        if X[G_marker] == X[-1]:
+            new_knots[uniform_marker] = 1.0
+        else:
+            new_knots[uniform_marker] = (X[G_marker] + X[G_marker + 1]) / 2
         uniform_marker += 1
+    new_knots[0] = 0.0
     return torch.tensor(new_knots)
 
 
