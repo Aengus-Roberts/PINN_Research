@@ -23,7 +23,7 @@ def PINN_Loss(model, x, x_b, beta=1.0, eps=1e-1, b=(1.0, 1.0)):
     boundary_residual = model(x_b).view(-1, 1)
     boundary_loss = torch.mean(boundary_residual**2)
 
-    return interior_loss + beta * boundary_loss
+    return interior_loss + beta * boundary_loss, interior_loss, boundary_loss
 
 
 def Ritz_Loss(model, x, x_b, beta=1.0, eps=1e-1, b=(1.0, 1.0)):
@@ -40,4 +40,4 @@ def Ritz_Loss(model, x, x_b, beta=1.0, eps=1e-1, b=(1.0, 1.0)):
 
     boundary_loss = torch.mean(model(x_b).view(-1, 1)**2)
 
-    return interior_loss + beta * boundary_loss
+    return interior_loss + beta * boundary_loss, interior_loss, boundary_loss
