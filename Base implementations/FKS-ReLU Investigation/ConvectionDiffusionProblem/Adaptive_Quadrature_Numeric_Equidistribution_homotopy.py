@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 import os
 
-EPSILON = 0.01
-INNER_EPOCHS = 50
-OUTER_EPOCHS = 100
+EPSILON = 0.1
+INNER_EPOCHS = 100
+OUTER_EPOCHS = 700
 KNOT_NUMBER = 20
 
 
@@ -21,7 +21,7 @@ class FKS(nn.Module):
     def set_knot_points(self, knot_points):
         self.knot_points = knot_points
 
-    @                              property
+    @property
     def ki(self):
         return self.knot_points[1:-1]
 
@@ -65,12 +65,12 @@ class FKS(nn.Module):
         return output
 
 
-def compute_energy_loss(model, x, w, epsilon):
+def compute_energy_loss(model, x, w, epsilon, alpha):
     x.requires_grad = True
     u = model(x).view(-1, 1)
     du = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    integrand = (epsilon ** 2 / 2) * du ** 2 + (1 / 2) * u ** 2 - u
+    integrand = torch.exp(-x / alpha*epsilon) * ((epsilon / 2) * du ** 2 - u)
 
     # Boundary condition loss: u(0) = u(1) = 0
     u0_pred = model(torch.tensor([[0.0]], device=x.device))
@@ -78,6 +78,41 @@ def compute_energy_loss(model, x, w, epsilon):
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
     return torch.sum(w * integrand) + bc_loss
+
+
+def compute_conditioning_number(model, epsilon=EPSILON):
+    knots = model.knot_points.to(dtype=model.coeffs.dtype, device=model.coeffs.device)
+    h = knots[1:] - knots[:-1]
+
+    if torch.any(h <= 0):
+        raise ValueError("Knot points must be strictly increasing.")
+
+    # Integral of exp(-x / epsilon) over each element [x_i, x_{i+1}]
+    weighted_lengths = epsilon * (
+            torch.exp(-knots[:-1] / epsilon) - torch.exp(-knots[1:] / epsilon)
+    )
+
+    # Element stiffness coefficients:
+    # epsilon * int exp(-x / epsilon) dx / h_i^2
+    element_values = epsilon * weighted_lengths / h.pow(2)
+
+    # Interior hat functions only: one basis at each interior knot.
+    n_basis = len(knots) - 2
+    H = torch.zeros((n_basis, n_basis), dtype=model.coeffs.dtype, device=model.coeffs.device)
+
+    for i in range(n_basis):
+        # basis i is centred at knot i + 1
+        H[i, i] = element_values[i] + element_values[i + 1]
+
+        if i < n_basis - 1:
+            H[i, i + 1] = -element_values[i + 1]
+            H[i + 1, i] = -element_values[i + 1]
+
+    eigenvals = torch.linalg.eigvalsh(H)
+    lambda_min = torch.min(eigenvals)
+    lambda_max = torch.max(eigenvals)
+    condition_number = lambda_max / lambda_min
+    return condition_number
 
 
 def get_knot_points(distribution, N=KNOT_NUMBER):
@@ -107,10 +142,10 @@ def evaluate_equidistribution(model, method=0):
     X = torch.cat(segments).view(-1)
     X.requires_grad = True
     u = model(X)
+    du = torch.autograd.grad(u, X, grad_outputs=torch.ones_like(u), create_graph=True, retain_graph=True)[0]
     if method == 0:
-        d2u = (u - 1) / EPSILON ** 2  # Cheating trick by rearranging -eps^2 u" + u = 1 -> u" = (u-1)/eps^2
+        d2u = (du - 1) / EPSILON  # Cheating trick by rearranging -eps^2 u" + u = 1 -> u" = (u-1)/eps^2
     elif method == 1:
-        du = torch.autograd.grad(u, X, grad_outputs=torch.ones_like(u), create_graph=True, retain_graph=True)[0]
         d2u = torch.autograd.grad(du, X, grad_outputs=torch.ones_like(du), create_graph=True)[0]
 
     # Determining Monitor Function u"^(2/5)
@@ -164,23 +199,24 @@ def get_adaptive_quadrature_points(model):
     quad_points = quad_points.ravel()
     quad_weights = quad_weights.ravel()
 
-    return torch.tensor(quad_points).view(-1,1), torch.tensor(quad_weights).view(-1,1)
+    return torch.tensor(quad_points).view(-1, 1), torch.tensor(quad_weights).view(-1, 1)
 
 
 def train_model():
+    alpha = 128.0
     knot_points = get_knot_points('uniform')
     model = FKS(knot_points)
 
     # Inner Training Loop
-    def trainParam(parameter):
+    def trainParam(parameter,alpha):
         if parameter == 0:
             optimiser = optim.LBFGS([model.coeffs], lr=0.01, max_iter=INNER_EPOCHS)
             x_quad, w_quad = get_adaptive_quadrature_points(model)
-            w_quad = torch.ones_like(x_quad)
+            # w_quad = torch.ones_like(x_quad)
 
         def DRM_closure():
             optimiser.zero_grad()
-            loss = compute_energy_loss(model, x_quad, w_quad, EPSILON)
+            loss = compute_energy_loss(model, x_quad, w_quad, EPSILON, alpha)
             loss.backward()
             return loss
 
@@ -190,10 +226,14 @@ def train_model():
 
     # Outer Training Loop
     for outer_epoch in range(OUTER_EPOCHS):
+        if outer_epoch % 100 == 0:
+            alpha /= 2
+            alpha = max(alpha, 1)
         print("Outer Epoch: ", outer_epoch)
-        model = trainParam(0)
+        print("Condition Number: " + str(compute_conditioning_number(model).item()))
         new_knot_points = get_updated_knots(model).detach()
         model.set_knot_points(new_knot_points)
+        model = trainParam(0, alpha)
 
     return model
 
@@ -220,9 +260,8 @@ def create_results(x_test, color='red', label=''):
 
 def main():
     x_test = torch.linspace(0, 1, 1000).reshape(-1, 1)
-    a = 1/EPSILON
-    u1 = lambda x: 1 - (np.exp(a*(x-1))+np.exp(-a*x))/(1+np.exp(-a))
-    u2 = lambda x: 1 - (np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON)))
+    B = 1 / (1 - np.exp(1 / EPSILON))
+    u1 = lambda x: x - B * (1 - np.exp(x / EPSILON))
     y_true = np.array([u1(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 

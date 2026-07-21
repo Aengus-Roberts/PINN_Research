@@ -278,7 +278,7 @@ def main():
     #create_results(x_test, x_uniform, w_uniform, color='red', label='Uniform')
     #create_results(x_test, x_gauss, w_gauss, color='blue', label='Gaussian')
     #create_results(x_test, x_thirds, w_thirds, color='orange', label='Thirds')
-    create_results(x_test, x_right, w_right, color='blue', label='Left')
+    create_results(x_test, x_right, w_right, color='blue', label='Right Quadrature')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')

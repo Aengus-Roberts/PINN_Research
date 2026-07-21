@@ -17,11 +17,12 @@ class FKS(nn.Module):
         super(FKS, self).__init__()
         self.coeffs = nn.Parameter(torch.ones(len(knot_points) - 1, dtype=torch.float32))
         self.knot_points = knot_points
+        self.eigenvalue = nn.Parameter(torch.tensor([1.0]))
 
     def set_knot_points(self, knot_points):
         self.knot_points = knot_points
 
-    @                              property
+    @property
     def ki(self):
         return self.knot_points[1:-1]
 
@@ -68,9 +69,10 @@ class FKS(nn.Module):
 def compute_energy_loss(model, x, w, epsilon):
     x.requires_grad = True
     u = model(x).view(-1, 1)
+    eigenvalue = model.eigenvalue
     du = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    integrand = (epsilon ** 2 / 2) * du ** 2 + (1 / 2) * u ** 2 - u
+    integrand = (1/2) * du ** 2 + (1 / 2) * eigenvalue * u ** 2
 
     # Boundary condition loss: u(0) = u(1) = 0
     u0_pred = model(torch.tensor([[0.0]], device=x.device))
@@ -164,7 +166,7 @@ def get_adaptive_quadrature_points(model):
     quad_points = quad_points.ravel()
     quad_weights = quad_weights.ravel()
 
-    return torch.tensor(quad_points).view(-1,1), torch.tensor(quad_weights).view(-1,1)
+    return torch.tensor(quad_points).view(-1, 1), torch.tensor(quad_weights).view(-1, 1)
 
 
 def train_model():
@@ -220,8 +222,8 @@ def create_results(x_test, color='red', label=''):
 
 def main():
     x_test = torch.linspace(0, 1, 1000).reshape(-1, 1)
-    a = 1/EPSILON
-    u1 = lambda x: 1 - (np.exp(a*(x-1))+np.exp(-a*x))/(1+np.exp(-a))
+    a = 1 / EPSILON
+    u1 = lambda x: 1 - (np.exp(a * (x - 1)) + np.exp(-a * x)) / (1 + np.exp(-a))
     u2 = lambda x: 1 - (np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON)))
     y_true = np.array([u1(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
