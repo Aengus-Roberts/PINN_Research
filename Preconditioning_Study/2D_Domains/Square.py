@@ -4,7 +4,7 @@ def sample_interior(N, device="cpu"):
     X = 2 * torch.rand(N, 2, device=device) - 1
     return X
 
-def sample_square_boundary(N, device="cpu"):
+def sample_boundary(N, device="cpu"):
     n = N // 4
 
     s = 2 * torch.rand(n, 1, device=device) - 1
