@@ -1,0 +1,44 @@
+[experiment]
+name = "poisson_pinn_slit_square"
+repetitions = 5
+base_seed = 1729
+device = "auto"
+dtype = "float64"
+deterministic = true
+
+[architecture]
+widths = [1, 2, 5, 10, 15, 20]
+depths = [1, 2, 4, 8, 12, 16]
+activations = ["tanh", "relu"]
+
+[domain]
+module = "Slit_Square"
+interior_function = "sample_interior"
+boundary_function = "sample_boundary"
+n_interior = 1000
+n_boundary = 400
+
+[loss]
+module = "Poisson"
+function = "Ritz_Loss"
+
+[loss.kwargs]
+beta = 10.0
+
+[training]
+optimizer = "adam"
+learning_rate = 0.01
+weight_decay = 0.0
+epochs = 1200
+
+[analysis]
+hessian_steps = [0, 100, 500, 1000]
+n_interior = 100
+n_boundary = 40
+relative_eig_tol = 1e-10
+absolute_eig_tol = 0.0
+max_hessian_params = 5000
+
+[output]
+directory = "Results/Architecture_Preconditioning"
+save_final_models = false
