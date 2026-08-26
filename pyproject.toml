@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
+    "jax>=0.5.1",
     "matplotlib>=3.10.8",
     "notebook>=7.4.7",
+    "optax>=0.2.4",
     "scikit-learn>=1.7.2",
     "scipy-stubs~=1.16.2",
     "tcl>=0.2",

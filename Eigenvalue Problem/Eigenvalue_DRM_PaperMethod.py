@@ -48,10 +48,14 @@ def compute_loss(model, x, x_b, x_s, w=None, bc_weight=10.0):
     # J(u) = int_Omega 1/2 |grad u|^2 - u dx
     integrand = 0.5 * grad_u_sq - u
 
+    denominator = u**2
+
     if w is None:
         interior_loss = torch.mean(integrand)
+        denominator_loss = torch.mean(denominator)
     else:
         interior_loss = torch.sum(w * integrand)
+        denominator_loss = torch.sum(w * denominator)
 
     # Boundary condition: u = 0 on the outer square boundary
     u_b = model(x_b).view(-1, 1)
@@ -61,7 +65,8 @@ def compute_loss(model, x, x_b, x_s, w=None, bc_weight=10.0):
     u_s = model(x_s).view(-1, 1)
     slit_boundary_loss = torch.mean(u_s**2)
 
-    return interior_loss + bc_weight * (square_boundary_loss + slit_boundary_loss)
+    term_weighting = 0.1
+    return interior_loss/denominator_loss + bc_weight * (square_boundary_loss + slit_boundary_loss) + term_weighting*(denominator_loss - 1)**2
 
 def sample_interior(N, device="cpu"):
     """Sample points in [-1,1]^2 \ ((0,1] x [-1,0))."""
