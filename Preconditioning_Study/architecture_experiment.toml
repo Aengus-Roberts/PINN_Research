@@ -7,8 +7,8 @@ dtype = "float64"
 deterministic = true
 
 [architecture]
-widths = [1, 2, 5, 10, 15, 20]
-depths = [1, 2, 4, 8, 12, 16]
+widths = [8]
+depths = [10]
 activations = ["tanh", "relu"]
 
 [domain]
@@ -17,7 +17,7 @@ interior_function = "sample_interior"
 boundary_function = "sample_boundary"
 # Add further entries to sweep over paired training sample sizes.
 sample_sizes = [
-    { n_interior = 1000, n_boundary = 396 },
+    { n_interior = 1000, n_boundary = 396 },{ n_interior = 500, n_boundary = 200 }
 ]
 
 [loss]
