@@ -1,10 +1,16 @@
 import torch
 
 def sample_interior(N, device="cpu"):
+    if N < 1:
+        raise ValueError("N must be at least 1")
+
     X = 2 * torch.rand(N, 2, device=device) - 1
     return X
 
 def sample_boundary(N, device="cpu"):
+    if N < 1 or N % 9 != 0:
+        raise ValueError("Boundary sample count must be a positive multiple of 9")
+
     n = N // 9
 
     left_s = 2 * torch.rand(2*n, 1, device=device) - 1
@@ -20,4 +26,3 @@ def sample_boundary(N, device="cpu"):
     slit = torch.cat([slit_s, torch.zeros_like(slit_s)], dim=1)
 
     return torch.cat([left, right, bottom, top, slit], dim=0)
-

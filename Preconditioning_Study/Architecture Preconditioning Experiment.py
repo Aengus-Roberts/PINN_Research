@@ -8,6 +8,7 @@ import shutil
 import sys
 import tomllib
 from datetime import datetime
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -162,6 +163,77 @@ def collect_fieldnames(rows):
     ))
 
 
+def get_sample_sizes(domain_configuration):
+    """Return validated (interior, boundary) training sample-size pairs."""
+    configured_sizes = domain_configuration.get("sample_sizes")
+
+    if configured_sizes is None:
+        try:
+            configured_sizes = [{
+                "n_interior": domain_configuration["n_interior"],
+                "n_boundary": domain_configuration["n_boundary"],
+            }]
+        except KeyError as error:
+            raise ValueError(
+                "[domain] must define sample_sizes, or both n_interior "
+                "and n_boundary."
+            ) from error
+    elif (
+        "n_interior" in domain_configuration
+        or "n_boundary" in domain_configuration
+    ):
+        raise ValueError(
+            "[domain] cannot combine sample_sizes with n_interior or "
+            "n_boundary."
+        )
+
+    if not isinstance(configured_sizes, list) or not configured_sizes:
+        raise ValueError("domain.sample_sizes must be a non-empty list.")
+
+    sample_sizes = []
+
+    for index, sample_size in enumerate(configured_sizes):
+        if not isinstance(sample_size, dict):
+            raise ValueError(
+                f"domain.sample_sizes[{index}] must be a table containing "
+                "n_interior and n_boundary."
+            )
+
+        missing = {
+            "n_interior",
+            "n_boundary",
+        } - sample_size.keys()
+
+        if missing:
+            raise ValueError(
+                f"domain.sample_sizes[{index}] is missing {sorted(missing)}."
+            )
+
+        n_interior = sample_size["n_interior"]
+        n_boundary = sample_size["n_boundary"]
+
+        for name, value in (
+            ("n_interior", n_interior),
+            ("n_boundary", n_boundary),
+        ):
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 1
+            ):
+                raise ValueError(
+                    f"domain.sample_sizes[{index}].{name} must be a "
+                    "positive integer."
+                )
+
+        sample_sizes.append((n_interior, n_boundary))
+
+    if len(set(sample_sizes)) != len(sample_sizes):
+        raise ValueError("domain.sample_sizes contains duplicate pairs.")
+
+    return sample_sizes
+
+
 def save_hessian_statistics(
     statistics,
     run_directory,
@@ -203,6 +275,8 @@ def validate_configuration(configuration):
 
     if missing:
         raise ValueError(f"Missing configuration sections: {missing}")
+
+    get_sample_sizes(configuration["domain"])
 
     epochs = configuration["training"]["epochs"]
     hessian_steps = configuration["analysis"]["hessian_steps"]
@@ -306,6 +380,7 @@ def run_experiment(configuration, configuration_path):
     base_seed = experiment_configuration.get("base_seed", 0)
     epochs = training_configuration["epochs"]
     hessian_steps = set(analysis_configuration["hessian_steps"])
+    sample_sizes = get_sample_sizes(domain_configuration)
 
     run_summary_rows = []
     hessian_summary_rows = []
@@ -314,6 +389,7 @@ def run_experiment(configuration, configuration_path):
         len(widths)
         * len(depths)
         * len(activation_names)
+        * len(sample_sizes)
         * repetitions
     )
     completed_runs = 0
@@ -332,11 +408,16 @@ def run_experiment(configuration, configuration_path):
 
         for depth in depths:
             for width in widths:
-                for repetition in range(repetitions):
+                for sample_size, repetition in product(
+                    sample_sizes,
+                    range(repetitions),
+                ):
+                    n_interior, n_boundary = sample_size
                     sampling_seed = base_seed + repetition
                     initialization_seed = base_seed + 100000 + repetition
                     run_id = (
                         f"{activation_name.lower()}_w{width}_d{depth}"
+                        f"_ni{n_interior}_nb{n_boundary}"
                         f"_repeat{repetition}_seed{sampling_seed}"
                     )
                     run_directory = runs_directory / run_id
@@ -344,17 +425,20 @@ def run_experiment(configuration, configuration_path):
 
                     set_seed(sampling_seed)
                     x = sample_interior(
-                        domain_configuration["n_interior"],
+                        n_interior,
                         device=device,
                     ).to(dtype=dtype)
+                    set_seed(sampling_seed + 10000)
                     x_b = sample_boundary(
-                        domain_configuration["n_boundary"],
+                        n_boundary,
                         device=device,
                     ).to(dtype=dtype)
+                    set_seed(sampling_seed + 20000)
                     x_analysis = sample_interior(
                         analysis_configuration["n_interior"],
                         device=device,
                     ).to(dtype=dtype)
+                    set_seed(sampling_seed + 30000)
                     x_b_analysis = sample_boundary(
                         analysis_configuration["n_boundary"],
                         device=device,
@@ -407,6 +491,14 @@ def run_experiment(configuration, configuration_path):
                                 "activation": activation_name,
                                 "width": width,
                                 "depth": depth,
+                                "n_interior": n_interior,
+                                "n_boundary": n_boundary,
+                                "analysis_n_interior": (
+                                    analysis_configuration["n_interior"]
+                                ),
+                                "analysis_n_boundary": (
+                                    analysis_configuration["n_boundary"]
+                                ),
                                 "repetition": repetition,
                                 "sampling_seed": sampling_seed,
                                 "initialization_seed": initialization_seed,
@@ -466,6 +558,8 @@ def run_experiment(configuration, configuration_path):
                         "activation": activation_name,
                         "width": width,
                         "depth": depth,
+                        "n_interior": n_interior,
+                        "n_boundary": n_boundary,
                         "number_parameters": number_parameters,
                         "repetition": repetition,
                         "sampling_seed": sampling_seed,

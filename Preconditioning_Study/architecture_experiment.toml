@@ -15,8 +15,10 @@ activations = ["tanh", "relu"]
 module = "Slit_Square"
 interior_function = "sample_interior"
 boundary_function = "sample_boundary"
-n_interior = 1000
-n_boundary = 400
+# Add further entries to sweep over paired training sample sizes.
+sample_sizes = [
+    { n_interior = 1000, n_boundary = 396 },
+]
 
 [loss]
 module = "Poisson"
@@ -34,7 +36,7 @@ epochs = 1200
 [analysis]
 hessian_steps = [0, 100, 500, 1000]
 n_interior = 100
-n_boundary = 40
+n_boundary = 36
 relative_eig_tol = 1e-10
 absolute_eig_tol = 0.0
 max_hessian_params = 5000
