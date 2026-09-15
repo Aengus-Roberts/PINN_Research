@@ -65,12 +65,12 @@ class FKS(nn.Module):
         return output
 
 
-def compute_energy_loss(model, x, w, epsilon, alpha):
+def compute_energy_loss(model, x, w, epsilon):
     x.requires_grad = True
     u = model(x).view(-1, 1)
     du = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    integrand = torch.exp(-x / alpha*epsilon) * ((epsilon / 2) * du ** 2 - u)
+    integrand = torch.exp(-x / epsilon) * ((epsilon / 2) * du ** 2 - u)
 
     # Boundary condition loss: u(0) = u(1) = 0
     u0_pred = model(torch.tensor([[0.0]], device=x.device))
@@ -203,12 +203,11 @@ def get_adaptive_quadrature_points(model):
 
 
 def train_model():
-    alpha = 128.0
     knot_points = get_knot_points('uniform')
     model = FKS(knot_points)
 
     # Inner Training Loop
-    def trainParam(parameter,alpha):
+    def trainParam(parameter):
         if parameter == 0:
             optimiser = optim.LBFGS([model.coeffs], lr=0.01, max_iter=INNER_EPOCHS)
             x_quad, w_quad = get_adaptive_quadrature_points(model)
@@ -216,7 +215,7 @@ def train_model():
 
         def DRM_closure():
             optimiser.zero_grad()
-            loss = compute_energy_loss(model, x_quad, w_quad, EPSILON, alpha)
+            loss = compute_energy_loss(model, x_quad, w_quad, EPSILON)
             loss.backward()
             return loss
 
@@ -226,14 +225,11 @@ def train_model():
 
     # Outer Training Loop
     for outer_epoch in range(OUTER_EPOCHS):
-        if outer_epoch % 100 == 0:
-            alpha /= 2
-            alpha = max(alpha, 1)
         print("Outer Epoch: ", outer_epoch)
         print("Condition Number: " + str(compute_conditioning_number(model).item()))
         new_knot_points = get_updated_knots(model).detach()
         model.set_knot_points(new_knot_points)
-        model = trainParam(0, alpha)
+        model = trainParam(0)
 
     return model
 

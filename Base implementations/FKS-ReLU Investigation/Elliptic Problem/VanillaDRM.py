@@ -5,6 +5,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
 from numpy.polynomial.legendre import Legendre
+import os
 
 EPSILON = 0.01
 
@@ -20,9 +21,23 @@ class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, 100),
+            nn.Linear(1, 10),
             nn.Tanh(),
-            nn.Linear(100, 1),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 1),
         )
 
     def forward(self, x):
@@ -42,7 +57,7 @@ def compute_loss(model, x, w=None, epsilon=EPSILON):
     u1_pred = model(torch.tensor([[1.0]], device=x.device))
     bc_loss = u0_pred.pow(2) + u1_pred.pow(2)
 
-    return torch.sum(w * integrand) + bc_loss
+    return torch.sum(w * integrand) + 5*bc_loss
 
 
 def gauss_lobatto_nodes_weights(n):
@@ -115,7 +130,7 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
     optimiser = optim.Adam(model.parameters(), lr=0.01)
 
     # Continue training on the full dataset
-    for epoch in range(10000):
+    for epoch in range(5000):
         loss = compute_loss(model, x_train[1:-1], weights[1:-1], epsilon)
         optimiser.zero_grad()
         loss.backward()
@@ -133,6 +148,17 @@ def create_results(quadrature, weights, color='red', label=''):
     y_pred = model(x_test).detach().numpy()
     plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
 
+    directory = "VanillaDRM/" + str(EPSILON)
+    os.makedirs(directory, exist_ok=True)
+    filename = directory + "/Params.npz"
+
+    parameters = {
+        name: tensor.detach().cpu().numpy()
+        for name, tensor in model.state_dict().items()
+    }
+
+    np.savez(filename, **parameters)
+
 
 if __name__ == "__main__":
     # Plotting True Result
@@ -142,19 +168,12 @@ if __name__ == "__main__":
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
     # Getting Collocation Points and weights
-    uniform, uniform_weights = generate_training_points(num_points=1000)
-    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
+    uniform, uniform_weights = generate_training_points(num_points=100)
+    gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=100)
 
 
     # Plotting Quadratures
-    create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
     create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
-    # create_results(sin, sin_weights, 'black', 'PINN: Sin')
-    # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
-    # create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
-    # create_results(outside, outside_weights, 'black', 'PINN: Outside')
-    # create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
-    # create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')

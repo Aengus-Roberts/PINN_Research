@@ -4,30 +4,31 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 from scipy.special import roots_legendre
+from scimba_torch.optimizers.ssbroyden import SSBroyden
 import os
 
+LAMBDA = 1.0
 EPSILON = 0.01
 INNER_EPOCHS = 50
-OUTER_EPOCHS = 100
+OUTER_EPOCHS = 50
 KNOT_NUMBER = 50
-BETA = 50 #Boundary weighting factor for energy loss function
 DTYPE = torch.float64
 torch.set_default_dtype(DTYPE)
 
-left_bc = (0.0, 0.0)
-right_bc = (1.0, 0.0)
+left_bc = (-1.0, -1.0)  # Dirichlet boundary condition at x = -1
+right_bc = (1.0, 1.0)  # Dirichlet boundary
 
 
 class FKS(nn.Module):
     def __init__(self, knot_points):
         super(FKS, self).__init__()
-        self.coeffs = nn.Parameter(torch.ones(len(knot_points)-2, dtype=DTYPE))
+        self.coeffs = nn.Parameter(knot_points)
         self.knot_points = knot_points
 
     def set_knot_points(self, knot_points):
         self.knot_points = knot_points
 
-    @property
+    @                              property
     def ki(self):
         return self.knot_points[1:-1]
 
@@ -60,7 +61,14 @@ class FKS(nn.Module):
         return torch.relu(x - kminus) / (kfinal - kminus)
 
     def forward(self, x):
-        return self.interior_spline(x) @ self.coeffs
+        # x: shape (N, 1)
+        # FKS: shape (N,K - 1)
+        FKS = torch.zeros(len(x), len(self.knot_points), dtype=DTYPE, device=x.device)
+        FKS[:, 0] = self.left_spline(x).squeeze()  # first column
+        FKS[:, -1] = self.right_spline(x).squeeze()  # last column
+        FKS[:, 1:-1] = self.interior_spline(x)
+        output = torch.matmul(FKS, self.coeffs)
+        return output
 
 
 def compute_energy_loss(model, x, w, epsilon):
@@ -68,7 +76,7 @@ def compute_energy_loss(model, x, w, epsilon):
     u = model(x).view(-1, 1)
     du = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
 
-    integrand = (epsilon**2)/2 * du**2 + u**2 / 2 - u
+    integrand = (epsilon**2)/2 * du**2 - LAMBDA*(u**2 / 2 - u**4 / 4)
 
     # Boundary condition loss: u(0) = u(1) = 0
     xminus = model.coeffs.new_tensor([left_bc[0]], requires_grad=True)
@@ -80,7 +88,7 @@ def compute_energy_loss(model, x, w, epsilon):
     bc_loss = (u_minus - left_bc[1])**2 + (u_plus - right_bc[1])**2
 
 
-    return torch.sum(w * integrand) + BETA*bc_loss
+    return torch.sum(w * integrand) + bc_loss
 
 
 def get_knot_points(distribution, N=KNOT_NUMBER):
@@ -104,7 +112,7 @@ def evaluate_equidistribution(model, method=0):
     X.requires_grad = True
     u = model(X)
     if method == 0:
-        d2u = (u-1) / (EPSILON**2)
+        d2u = LAMBDA * u * (1-u**2) / (EPSILON**2)
     elif method == 1:
         du = torch.autograd.grad(u, X, grad_outputs=torch.ones_like(u), create_graph=True, retain_graph=True)[0]
         d2u = torch.autograd.grad(du, X, grad_outputs=torch.ones_like(du), create_graph=True)[0]
@@ -164,7 +172,7 @@ def get_updated_knots(model):
 
 def get_adaptive_quadrature_points(model):
     knots = model.knot_points.detach().numpy()
-    base_gauss_points, base_gauss_weights = roots_legendre(2)
+    base_gauss_points, base_gauss_weights = roots_legendre(3)
 
     # Element midpoints and half-widths
     mid = 0.5 * (knots[:-1] + knots[1:])
@@ -181,47 +189,43 @@ def get_adaptive_quadrature_points(model):
     return torch.tensor(quad_points).view(-1,1), torch.tensor(quad_weights).view(-1,1)
 
 
-def train_model(n_knots=KNOT_NUMBER, cost=None, *, inner_epochs=INNER_EPOCHS,
-                outer_epochs=OUTER_EPOCHS, verbose=True):
-    if n_knots < 3:
-        raise ValueError('At least three knots are required.')
-    knot_points = get_knot_points('uniform', N=n_knots)
+def train_model():
+    knot_points = get_knot_points('uniform')
     model = FKS(knot_points)
 
     # Inner Training Loop
     def trainParam(parameter):
         if parameter == 0:
-            optimiser = optim.LBFGS([model.coeffs], lr=0.01, max_iter=inner_epochs)
+            optimiser = SSBroyden([model.coeffs], lr=0.01, tolerance_grad=1e-10,
+        method="ssbroyden")
             x_quad, w_quad = get_adaptive_quadrature_points(model)
 
         def DRM_closure():
             optimiser.zero_grad()
             loss = compute_energy_loss(model, x_quad, w_quad, EPSILON)
-            if cost is not None:
-                cost.objective_evaluations += 1
             loss.backward()
-            if cost is not None:
-                cost.gradient_evaluations += 1
             return loss
 
         if parameter == 0:
-            optimiser.step(DRM_closure)
+            for inner_epoch in range(INNER_EPOCHS):
+                optimiser.step(DRM_closure)
         return model
 
     # Outer Training Loop
-    for outer_epoch in range(outer_epochs):
-        if verbose:
-            print("Outer Epoch: ", outer_epoch)
+    for outer_epoch in range(OUTER_EPOCHS):
+        print("Outer Epoch: ", outer_epoch)
         model = trainParam(0)
-        new_knots = get_updated_knots(model).detach().to(model.coeffs)
+        new_knots = get_updated_knots(model).detach()
+        new_knots = new_knots.to(model.coeffs)
 
         with torch.no_grad():
-            new_coeffs = model(new_knots[1:-1]).detach()
+            # Evaluate using the old knots
+            new_coeffs = model(new_knots).detach()
+
+            # Install the new representation
             model.set_knot_points(new_knots)
             model.coeffs.copy_(new_coeffs)
 
-    # The returned model must be optimised on its final mesh.
-    model = trainParam(0)
     return model
 
 
@@ -237,25 +241,19 @@ def create_results(x_test, color='red', label=''):
     directory = "FKSmodelParams/" + str(EPSILON)
     os.makedirs(directory, exist_ok=True)
     filename = directory + "/" + label + ".npz"
-    full_coeffs = torch.cat((
-        model.coeffs.new_zeros(1),
-        model.coeffs,
-        model.coeffs.new_zeros(1),
-    ))
-
-    np.savez(
-        filename,
-        coeffs=full_coeffs.detach().cpu().numpy(),
-        knots=model.knot_points.detach().cpu().numpy(),
-    )
+    print(len(model.coeffs))
+    print(len(model.knot_points))
+    with open(filename, 'wb') as file:
+        np.savez(file,
+                 coeffs=model.coeffs.detach().numpy(),
+                 knots=model.knot_points.detach().numpy())
 
 
 def main():
-    x_test = torch.linspace(0, 1, 1000).reshape(-1, 1)
-    a = 1/EPSILON
-    u1 = lambda x: 1 - (np.exp(a*(x-1))+np.exp(-a*x))/(1+np.exp(-a))
-    u2 = lambda x: 1 - (np.cosh((x - 0.5) / EPSILON) / np.cosh(1 / (2 * EPSILON)))
-    y_true = np.array([u2(x) for x in x_test])
+    x_test = torch.linspace(-1, 1, 1000).reshape(-1, 1)
+    a = 1/(EPSILON * np.sqrt(2))
+    u1 = lambda x: np.tanh(a*x)
+    y_true = np.array([u1(x) for x in x_test])
     plt.plot(x_test.numpy(), y_true, label='True Solution', color='green')
 
     create_results(x_test, color='blue', label='Approximation')
