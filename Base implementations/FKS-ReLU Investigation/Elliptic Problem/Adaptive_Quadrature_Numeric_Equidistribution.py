@@ -7,7 +7,7 @@ from scipy.special import roots_legendre
 import os
 
 EPSILON = 0.01
-INNER_EPOCHS = 50
+INNER_EPOCHS = 100
 OUTER_EPOCHS = 100
 KNOT_NUMBER = 50
 BETA = 50 #Boundary weighting factor for energy loss function
@@ -21,7 +21,7 @@ right_bc = (1.0, 0.0)
 class FKS(nn.Module):
     def __init__(self, knot_points):
         super(FKS, self).__init__()
-        self.coeffs = nn.Parameter(torch.ones(len(knot_points)-2, dtype=DTYPE))
+        self.coeffs = nn.Parameter(torch.zeros(len(knot_points)-2, dtype=DTYPE))
         self.knot_points = knot_points
 
     def set_knot_points(self, knot_points):

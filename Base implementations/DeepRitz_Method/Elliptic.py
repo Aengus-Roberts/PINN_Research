@@ -20,9 +20,15 @@ class PINN(nn.Module):
     def __init__(self):
         super(PINN, self).__init__()
         self.net = nn.Sequential(
-            nn.Linear(1, 100),
+            nn.Linear(1, 10),
             nn.Tanh(),
-            nn.Linear(100, 1),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 10),
+            nn.Tanh(),
+            nn.Linear(10, 1),
         )
 
     def forward(self, x):

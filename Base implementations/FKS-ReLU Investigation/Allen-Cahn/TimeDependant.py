@@ -12,7 +12,7 @@ INNER_EPOCHS = 25
 OUTER_EPOCHS = 50
 KNOT_NUMBER = 50
 TIMESTEPS = 200
-DT = 0.5
+DT = 0.1
 DTYPE = torch.float64
 torch.set_default_dtype(DTYPE)
 
@@ -375,8 +375,8 @@ def main():
     X = torch.linspace(left_boundary[0], right_boundary[0], 20 * KNOT_NUMBER, dtype=DTYPE, requires_grad=True)
     U_0 = torch.sin(torch.pi * X)
     knots_0, weights_0 = discretiseU0(X, U_0)
-    knots_0 = torch.linspace(-1, 1, KNOT_NUMBER, dtype=DTYPE)
-    weights_0 = torch.rand(KNOT_NUMBER, dtype=DTYPE) * 2 - 1
+    #knots_0 = torch.linspace(-1, 1, KNOT_NUMBER, dtype=DTYPE)
+    #weights_0 = torch.rand(KNOT_NUMBER, dtype=DTYPE) * 2 - 1
     solvedModels = []
     solvedModels.append(FKS(knots_0, weights_0))
     for timestep in range(TIMESTEPS):

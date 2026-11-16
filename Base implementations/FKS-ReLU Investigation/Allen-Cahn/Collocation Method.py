@@ -9,28 +9,26 @@ import os
 EPSILON = 0.01
 LAMBDA = 1
 
-def ode(x,y):
-    u = y[0]
-    u_x = y[1]
-    u_xx = (LAMBDA*u*(u**2 - 1))
-    return np.vstack([u_x,u_xx])
+def ode(x, y):
+    u, u_x = y
+    u_xx = LAMBDA * u * (u**2 - 1) / EPSILON**2
+    return np.vstack([u_x, u_xx])
 
 # Boundary conditions: u(0) = 0, u(1) = 0
 def bc(ya, yb):
-    return np.array([ya[0], yb[0]])
+    return np.array([ya[0] + 1, yb[0] - 1])
 
 # Initial guess (zero function)
-x = np.linspace(-1, 1, 50)
-y_guess = np.zeros((2, x.size))  # [u, u']
+x = np.linspace(-1, 1, 401)
+a = np.sqrt(LAMBDA / 2) / EPSILON
+u_guess = np.tanh(a * x)
+y_guess = np.vstack([u_guess, a * (1 - u_guess**2)])
 
-# Solve the BVP
-sol = solve_bvp(ode, bc, x, y_guess)
+sol = solve_bvp(ode, bc, x, y_guess,
+                tol=1e-5, max_nodes=10000)
 
-# Check result
-if sol.success:
-    print("BVP solved successfully")
-else:
-    print("BVP solver failed")
+if not sol.success:
+    raise RuntimeError(sol.message)
 
 # Plot the solution
 x_plot = np.linspace(-1, 1, 200)

@@ -118,7 +118,7 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
     loss_list = []
 
     # Continue training on the full dataset
-    for epoch in range(20000):
+    for epoch in range(10000):
         loss = compute_loss(model, x_train[1:-1], weights[1:-1], epsilon)
         optimiser.zero_grad()
         loss.backward()
@@ -135,10 +135,6 @@ def train_PINN(x_train, weights, epsilon=EPSILON):
 def create_results(quadrature, weights, color='red', label=''):
     model, loss_list = train_PINN(quadrature, weights)
     y_pred = model(x_test).detach().numpy()
-    plt.plot([i for i in range(len(loss_list))], loss_list, label=label)
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.show()
     plt.plot(x_test.numpy(), y_pred, label=label, color=color, linestyle='--')
 
 
@@ -152,22 +148,12 @@ if __name__ == "__main__":
     # Getting Collocation Points and weights
     uniform, uniform_weights = generate_training_points(num_points=1000)
     gauss_10, gauss_10_weights = generate_training_points(method='gauss_legendre', num_points=1000)
-    #sin, sin_weights = generate_training_points(method='sin', num_points=1000)
-    # gauss_11, gauss_11_weights = generate_training_points(method='gauss_legendre', num_points=11)
-    # lobatto_10, lobatto_10_weights = generate_training_points(method='gauss_lobatto')
-    # lobatto_11, lobatto_11_weights = generate_training_points(method='gauss_lobatto', num_points=11)
     thirds,thirds_weights = generate_training_points(method='thirds', num_points=1000)
-    # outside,outside_weights = generate_training_points(method='outside_thirds', num_points=300)
 
     # Plotting Quadratures
     create_results(uniform, uniform_weights, 'red', 'PINN: Uniform')
     create_results(gauss_10, gauss_10_weights, 'blue', 'PINN: Gauss')
-    #create_results(sin, sin_weights, 'black', 'PINN: Sin')
-    # create_results(gauss_11, gauss_11_weights, 'orange', 'PINN: Gauss_11')
     create_results(thirds, thirds_weights, 'green', 'PINN: Thirds')
-    # create_results(outside, outside_weights, 'black', 'PINN: Outside')
-    # create_results(lobatto_10, lobatto_10_weights, 'black', 'PINN: Lobatto_10')
-    # create_results(lobatto_11, lobatto_11_weights, 'pink', 'PINN: Lobatto_11')
 
     plt.xlabel('x')
     plt.ylabel('u(x)')
